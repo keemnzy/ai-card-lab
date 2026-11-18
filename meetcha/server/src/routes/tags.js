@@ -4,7 +4,6 @@
 import { Router } from "express";
 import { deriveTagKey, randomToken, sha256, verifySun } from "../crypto.js";
 import { PENDING_COOKIE, cookieOptions, isSuspended } from "../lib.js";
-import { recordEncounter } from "../encounters.js";
 import { esc, page } from "../pages.js";
 import { viewProfile } from "./social.js";
 
@@ -14,7 +13,7 @@ function notice(res, status, title, text) {
   res.status(status).type("html").send(page(title, `<div class="card"><h1>${esc(title)}</h1><p class="muted">${esc(text)}</p></div>`));
 }
 
-export function tagRoutes({ db, cfg, limit }) {
+export function tagRoutes({ db, cfg, limit, meet }) {
   const r = Router();
 
   function onScan(req, res, tag, { verified, fresh }) {
@@ -27,7 +26,7 @@ export function tagRoutes({ db, cfg, limit }) {
     // 복사된 링크(카운터 재사용)는 도감에 넣지 않고 프로필만 보여 준다
     if (fresh) {
       if (req.user) {
-        const r = recordEncounter(db, req.user.id, owner, verified);
+        const r = meet(req.user.id, owner, verified);
         if (r?.isNew) return res.redirect(302, `/u/${owner}?new=1`);
       } else {
         const t = randomToken();

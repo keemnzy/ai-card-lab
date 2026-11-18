@@ -62,8 +62,8 @@ We don't make decisions about you based solely on automated processing that have
 
 **Other users**, according to your choices:
 - **Card visibility.** *Public*: anyone. *People I've met* (default): only people connected to you by a key-ring tap; everyone else sees your name only. *Private*: everyone else sees your name only.
-- **Event mode.** When you check in, other attendees at that event see the hint you wrote, but only during the event. People who tap your key ring see your card.
-- **Leaderboard.** Your name and the number of people you met appear only if you opt in when you check in.
+- **Event mode.** When you check in, other attendees at that event see the hint you wrote, but only during the event. People who tap your key ring see your card. When you tap someone's key ring during an event, they get a notification with your name.
+- **Leaderboard and live activity.** Your name and the number of people you met appear on the leaderboard and in the live activity feed only if you opt in when you check in. Otherwise the feed shows only "an attendee".
 - **Quiz answers** are never sent to other users. We check answers on our servers.
 
 **Event organizers** (our business customers) receive only aggregated statistics such as attendee count, number of connections and average quiz score. We will not give them your individual information unless we first tell you exactly what will be shared and you agree.

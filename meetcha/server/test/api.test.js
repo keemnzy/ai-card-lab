@@ -364,3 +364,107 @@ test("신고 → 운영진 확인 → 이용 정지 → 정지 해제", async ()
   assert.equal((await bad.c.post("/api/auth/verify", { token: t2 })).status, 200);
   assert.equal((await victim.c.get(`/api/users/${bad.id}`)).body.limited, false);
 });
+
+// SSE 스트림에 붙어서 받은 이벤트를 모은다
+async function stream(c, path) {
+  const ac = new AbortController();
+  const res = await fetch(base + path, { headers: { cookie: Object.entries(c.jar).map(([k, v]) => `${k}=${v}`).join("; ") }, signal: ac.signal });
+  const got = [];
+  const waiters = [];
+  if (res.ok) {
+    (async () => {
+      const dec = new TextDecoder();
+      let buf = "";
+      try {
+        for await (const chunk of res.body) {
+          buf += dec.decode(chunk, { stream: true });
+          let i;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const type = /^event: (.+)$/m.exec(block)?.[1];
+            const data = /^data: (.+)$/m.exec(block)?.[1];
+            if (!type) continue;
+            got.push({ type, data: JSON.parse(data) });
+            waiters.splice(0).forEach((w) => w());
+          }
+        }
+      } catch { /* 닫힘 */ }
+    })();
+  }
+  const changed = () => new Promise((r) => waiters.push(r));
+  return {
+    status: res.status,
+    got,
+    close: () => ac.abort(),
+    /** type 이벤트가 올 때까지 기다린다 (최대 2초) */
+    async wait(type, pred = () => true) {
+      const deadline = Date.now() + 2000;
+      for (;;) {
+        const hit = got.find((e) => e.type === type && pred(e.data));
+        if (hit) return hit.data;
+        if (Date.now() > deadline) throw new Error(`이벤트 ${type} 안 옴. 받은 것: ${got.map((e) => e.type)}`);
+        await Promise.race([changed(), new Promise((r) => setTimeout(r, 100))]);
+      }
+    },
+  };
+}
+
+test("실시간 피드: 누가 무엇을 받는지 (개인정보 범위 포함)", async () => {
+  const admin = client();
+  await login(admin, "admin@bs.kr");
+  const ev = await admin.post("/api/admin/events", { name: "Live", startsAt: Date.now() - 60_000, endsAt: Date.now() + 3600_000 });
+  const eid = ev.body.id;
+  const a = await newUser("live-a@test.com", { name: "LiveA" });
+  const b = await newUser("live-b@test.com", { name: "LiveB" });
+  const c = await newUser("live-c@test.com", { name: "LiveC" });
+  const outsider = await newUser("live-x@test.com");
+  await a.c.post("/api/events/checkin", { code: ev.body.checkinCode, showOnLeaderboard: true });
+  await b.c.post("/api/events/checkin", { code: ev.body.checkinCode });
+
+  assert.equal((await stream(outsider.c, `/api/events/${eid}/stream`)).status, 403);
+  const sa = await stream(a.c, `/api/events/${eid}/stream`);
+  const sb = await stream(b.c, `/api/events/${eid}/stream`);
+  try {
+    assert.equal(sa.status, 200);
+    assert.equal((await sa.wait("ready")).checkedIn, 2);
+
+    // C 체크인 → A, B는 인원수만 받는다 (리더보드 비동의라 이름 없음)
+    await c.c.post("/api/events/checkin", { code: ev.body.checkinCode });
+    const ck = await sb.wait("checkin");
+    assert.deepEqual(ck, { checkedIn: 3 });
+
+    // A(리더보드 동의)가 B를 태그
+    const pathB = await issueStaticTag(admin, b.c);
+    await a.c.get(pathB);
+    assert.equal((await sa.wait("found")).user.name, "LiveB");
+    assert.equal((await sb.wait("tagged")).by.name, "LiveA");
+    assert.deepEqual((await sb.wait("activity")).who, { id: a.id, name: "LiveA" });
+    assert.equal((await sb.wait("leaderboard")).leaders[0].name, "LiveA");
+    assert.equal((await sb.wait("stats", (s) => s.encounters === 1)).checkedIn, 3);
+    assert.ok(!sb.got.some((e) => e.type === "found"), "found는 태그한 본인에게만");
+    assert.ok(!sa.got.some((e) => e.type === "tagged"), "tagged는 태그당한 사람에게만");
+
+    // B(비동의)가 A를 태그 → 활동 소식에 이름이 안 나온다
+    const pathA = await issueStaticTag(admin, a.c);
+    await b.c.get(pathA);
+    const act = await sa.wait("activity", (d) => d.who === null);
+    assert.deepEqual([act.who, act.met], [null, null]);
+
+    // 같은 사람을 다시 태그해도 알림은 다시 안 감
+    const before = sa.got.length;
+    await a.c.get(pathB);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(sa.got.filter((e) => e.type === "found").length, 1);
+    assert.ok(sa.got.length >= before);
+
+    // 한 사람당 열 수 있는 창 수 제한
+    const extra = [await stream(a.c, `/api/events/${eid}/stream`), await stream(a.c, `/api/events/${eid}/stream`)];
+    const over = await stream(a.c, `/api/events/${eid}/stream`);
+    assert.equal(over.status, 429);
+    extra.forEach((s) => s.close());
+  } finally {
+    sa.close();
+    sb.close();
+  }
+});

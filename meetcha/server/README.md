@@ -10,7 +10,7 @@ NFC 키링 태그 → 프로필 → 도감 → 퀴즈 → 메모·메시지, 그
 ```bash
 cd meetcha/server
 npm install
-npm test          # 테스트 17개
+npm test          # 테스트 18개
 npm run seed      # 예시 참가자 3명 + 키링 + 진행 중 이벤트 생성, 키링 URL 출력
 npm run dev       # http://localhost:3000
 ```
@@ -64,6 +64,7 @@ npm run dev       # http://localhost:3000
 | POST | `/api/events/checkin` | `{code, showOnLeaderboard}` 행사 체크인 |
 | GET | `/api/events/:id/board` | 발견 보드 (못 만난 사람은 힌트만) |
 | GET | `/api/events/:id/leaderboard` | 리더보드 (동의한 사람만) |
+| GET | `/api/events/:id/stream` | 실시간 피드 (SSE, 아래 참고) |
 | POST | `/api/admin/tags` | 키링 발급 `{kind:"static", count}` 또는 `{kind:"sun", uids:[...]}` |
 | POST | `/api/admin/events` | 이벤트 생성 → 체크인 코드 |
 | GET | `/api/admin/events/:id/report` | 고객사용 리포트 (통계만) |
@@ -72,6 +73,22 @@ npm run dev       # http://localhost:3000
 | POST | `/api/admin/users/:id/suspend` | `{days?, reason}` 이용 정지 (days 없으면 영구), 로그인 즉시 끊김 |
 | POST | `/api/admin/users/:id/unsuspend` | 정지 해제 |
 | GET | `/legal/terms`, `/legal/privacy` | 약관·처리방침 원문 (`?lang=en` 영문) |
+
+## 이벤트 실시간 피드
+
+브라우저에서 `new EventSource("/api/events/<id>/stream")`으로 연결한다. 체크인한 참가자만 연결할 수 있고, 한 사람당 창 3개까지.
+
+| 이벤트 | 받는 사람 | 내용 |
+|---|---|---|
+| `ready` | 연결한 본인 | 체크인 수, 만남 수, 리더보드 (연결 직후 한 번) |
+| `checkin` | 참가자 전원 (본인 제외) | 체크인 수만. 이름 없음 → 보드를 다시 불러와 가려진 카드 추가 |
+| `found` | 태그한 본인 | 새로 발견한 사람의 이름·직함·소속 |
+| `tagged` | 태그당한 사람 | 나를 태그한 사람 이름 |
+| `activity` | 참가자 전원 | 누가 몇 명째 만났는지. 리더보드 비동의자는 `who: null` |
+| `stats` | 참가자 전원 | 체크인 수, 만남 수 |
+| `leaderboard` | 참가자 전원 | 리더보드 (동의자만) |
+
+행사 전에 이미 만난 사이를 다시 태그하면 알림을 보내지 않는다. 구독은 서버 메모리에 있으므로, 서버를 여러 대로 늘리면 Redis pub/sub 등으로 바꿔야 한다(`src/realtime.js`의 `createBus`).
 
 ## 보안에서 구현된 것
 
@@ -93,5 +110,5 @@ npm run dev       # http://localhost:3000
 - [ ] 메일 발송 연결 (`src/server.js`의 `mailer`, 예: Resend / AWS SES)
 - [ ] 프론트엔드를 이 API에 연결 (`../prototype.html` 화면 기준)
 - [ ] NTAG 424 DNA 칩 프로비저닝 도구 (칩에 SDM 설정 + `deriveTagKey`로 만든 키 기록)
-- [ ] 여러 서버로 늘릴 때: 레이트 리밋을 Redis로, DB를 Postgres로
+- [ ] 여러 서버로 늘릴 때: 레이트 리밋과 실시간 피드를 Redis로, DB를 Postgres로
 - [ ] 개인정보처리방침·이용약관 빈칸 채우기·변호사 검토 (`../legal/`)

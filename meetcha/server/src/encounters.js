@@ -19,12 +19,12 @@ export function recordEncounter(db, scannerId, ownerId, verified, now = Date.now
         `UPDATE encounters SET last_at = ?, scans = scans + 1, verified = MAX(verified, ?),
            event_id = COALESCE(event_id, ?) WHERE scanner_id = ? AND owner_id = ?`,
       ).run(now, verified ? 1 : 0, ev?.id ?? null, scannerId, ownerId);
-      return { isNew: false };
+      return { isNew: false, eventId: ev?.id ?? null };
     }
     db.prepare(
       `INSERT INTO encounters (scanner_id, owner_id, first_at, last_at, verified, event_id) VALUES (?, ?, ?, ?, ?, ?)`,
     ).run(scannerId, ownerId, now, now, verified ? 1 : 0, ev?.id ?? null);
-    return { isNew: true };
+    return { isNew: true, eventId: ev?.id ?? null };
   });
 }
 

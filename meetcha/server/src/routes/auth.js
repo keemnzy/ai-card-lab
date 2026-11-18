@@ -4,13 +4,12 @@
 import { Router } from "express";
 import { randomId, randomToken, sha256 } from "../crypto.js";
 import { EMAIL_RE, HttpError, PENDING_COOKIE, SESSION_COOKIE, TERMS_VERSION, bad, cookieOptions, isSuspended, str } from "../lib.js";
-import { recordEncounter } from "../encounters.js";
 import { page } from "../pages.js";
 
 const LOGIN_TTL = 15 * 60_000;
 const SESSION_TTL = 30 * 24 * 3600_000;
 
-export function authRoutes({ db, cfg, mailer, limit }) {
+export function authRoutes({ db, cfg, mailer, limit, meet }) {
   const r = Router();
 
   r.post("/api/auth/request", (req, res, next) => requestLink(req, res).catch(next));
@@ -110,7 +109,7 @@ export function authRoutes({ db, cfg, mailer, limit }) {
     if (pending) {
       const p = db.prepare("SELECT * FROM pending_scans WHERE token_hash = ? AND expires_at > ?").get(sha256(pending), now);
       if (p) {
-        recordEncounter(db, user.id, p.owner_id, !!p.verified, now);
+        meet(user.id, p.owner_id, !!p.verified, now);
         db.prepare("DELETE FROM pending_scans WHERE token_hash = ?").run(p.token_hash);
         redirect = `/u/${p.owner_id}`;
       }

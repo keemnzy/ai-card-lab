@@ -11,12 +11,14 @@ import { quizRoutes } from "./routes/quiz.js";
 import { tagRoutes } from "./routes/tags.js";
 import { eventRoutes } from "./routes/events.js";
 import { adminRoutes } from "./routes/admin.js";
+import { createBus, createMeet } from "./realtime.js";
 
 const LEGAL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../legal");
 
 export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
   const app = express();
-  const deps = { db, cfg, mailer, limit, now };
+  const bus = createBus();
+  const deps = { db, cfg, mailer, limit, now, bus, meet: createMeet(db, bus) };
 
   app.disable("x-powered-by");
   app.set("trust proxy", cfg.trustProxy);

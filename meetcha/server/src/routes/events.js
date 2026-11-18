@@ -2,8 +2,9 @@
 import { Router } from "express";
 import { sha256 } from "../crypto.js";
 import { HttpError, forbidden, notFound, requireUser, str } from "../lib.js";
+import { MAX_STREAMS_PER_USER, eventStats, leaderboard, openStream } from "../realtime.js";
 
-export function eventRoutes({ db, limit }) {
+export function eventRoutes({ db, limit, bus }) {
   const r = Router();
 
   const getEvent = (id) => {
@@ -22,10 +23,17 @@ export function eventRoutes({ db, limit }) {
     if (!e) throw new HttpError(400, "invalid_code", "체크인 코드를 확인해 주세요");
     const now = Date.now();
     if (now > e.ends_at) throw new HttpError(410, "event_ended", "이미 끝난 행사예요");
+    const already = isAttendee(e.id, req.user.id);
     db.prepare(
       `INSERT INTO event_attendees (event_id, user_id, checked_in_at, show_leaderboard) VALUES (?, ?, ?, ?)
        ON CONFLICT (event_id, user_id) DO UPDATE SET show_leaderboard = excluded.show_leaderboard`,
     ).run(e.id, req.user.id, now, req.body?.showOnLeaderboard === true ? 1 : 0);
+    if (!already) {
+      const stats = eventStats(db, e.id);
+      bus.publish(e.id, "checkin", { checkedIn: stats.checkedIn }, { except: req.user.id });
+      bus.publish(e.id, "stats", stats);
+    }
+    if (req.body?.showOnLeaderboard === true) bus.publish(e.id, "leaderboard", { leaders: leaderboard(db, e.id) });
     res.json({ ok: true, eventId: e.id, name: e.name });
   });
 
@@ -57,16 +65,26 @@ export function eventRoutes({ db, limit }) {
   r.get("/api/events/:id/leaderboard", requireUser, (req, res) => {
     const e = getEvent(req.params.id);
     if (!isAttendee(e.id, req.user.id)) throw forbidden("not_attendee", "체크인한 참가자만 볼 수 있어요");
-    const rows = db
-      .prepare(
-        `SELECT u.id, u.name, COUNT(x.owner_id) AS met
-         FROM event_attendees a JOIN users u ON u.id = a.user_id
-         LEFT JOIN encounters x ON x.scanner_id = u.id AND x.event_id = a.event_id
-         WHERE a.event_id = ? AND a.show_leaderboard = 1 AND u.deleted_at IS NULL AND (u.suspended_until IS NULL OR u.suspended_until <= ?)
-         GROUP BY u.id ORDER BY met DESC, MIN(a.checked_in_at) LIMIT 20`,
-      )
-      .all(e.id, Date.now());
-    res.json({ leaders: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, met: r.met })) });
+    res.json({ leaders: leaderboard(db, e.id) });
+  });
+
+  // 실시간 피드 (SSE). 브라우저에서는 new EventSource("/api/events/<id>/stream") 로 연결한다.
+  //  checkin     : 새 참가자 (인원수만)          → 참가자 전원
+  //  found       : 내가 새로 발견한 사람의 명함   → 태그한 본인
+  //  tagged      : 나를 태그한 사람 이름          → 태그당한 사람
+  //  activity    : 누군가 새 사람을 만남 (리더보드 동의자만 이름) → 전원
+  //  stats       : 체크인 수, 만남 수             → 전원
+  //  leaderboard : 리더보드 (동의자만)            → 전원
+  r.get("/api/events/:id/stream", requireUser, (req, res) => {
+    const e = getEvent(req.params.id);
+    if (!isAttendee(e.id, req.user.id)) throw forbidden("not_attendee", "체크인한 참가자만 볼 수 있어요");
+    if (Date.now() > e.ends_at) throw new HttpError(410, "event_ended", "이미 끝난 행사예요");
+    if (bus.count(e.id, req.user.id) >= MAX_STREAMS_PER_USER)
+      throw new HttpError(429, "too_many_streams", "열린 창이 너무 많아요. 다른 창을 닫아 주세요");
+    let unsubscribe = () => {};
+    const send = openStream(req, res, { onClose: () => unsubscribe() });
+    unsubscribe = bus.subscribe(e.id, req.user.id, send);
+    send("ready", { eventId: e.id, ...eventStats(db, e.id), leaders: leaderboard(db, e.id) });
   });
 
   return r;
