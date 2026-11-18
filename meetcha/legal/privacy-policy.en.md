@@ -31,6 +31,7 @@ This policy explains how [Company legal name] ("**we**", "**us**") handles perso
 | Account | Email address | Sign-in links, identifying your account, service notices | Yes |
 | Business card | Name or nickname | Showing your card | Yes |
 | | Job title, company, one-line intro, external links (e.g. LinkedIn), quiz questions and answers, event hint | Showing your card, running your quiz | Optional |
+| | Profile photo | Showing your card. We resize it to 512×512 and remove all embedded data, such as location, before storing it | Optional |
 | Key ring | Chip ID or link code, when you registered it, lost/active status | Linking your key ring to your account, stopping cloned or stolen key rings | When you register a key ring |
 | Connections | Who tapped whose key ring and when, at which event, and whether the tap came from a genuine chip | Your collection ("dex"), deciding who can see your card | Created as you use the Service |
 | Quiz activity | Quiz attempts and scores | Showing scores and best results | Created as you use the Service |
@@ -67,6 +68,7 @@ We don't make decisions about you based solely on automated processing that have
 - **Card visibility.** *Public*: anyone. *People I've met* (default): only people connected to you by a key-ring tap; everyone else sees your name only. *Private*: everyone else sees your name only.
 - **Event mode.** When you check in, other attendees at that event see the hint you wrote, but only during the event. People who tap your key ring see your card. When you tap someone's key ring during an event, they get a notification with your name.
 - **Saving contacts.** People who can see your card can save what it shows (name, title, company, intro, links) to their phone's contacts. Your email address is never included.
+- **Venue screens.** If an organizer shows the leaderboard on a screen at the venue, the names and counts of people who opted in appear there too. Notifications meant for individuals never appear on venue screens.
 - **Leaderboard and live activity.** Your name and the number of people you met appear on the leaderboard and in the live activity feed only if you opt in when you check in. Otherwise the feed shows only "an attendee".
 - **Quiz answers** are never sent to other users. We check answers on our servers.
 

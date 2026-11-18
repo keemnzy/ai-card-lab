@@ -1,7 +1,12 @@
 // 실제 HTTP로 서버를 띄워 전체 흐름을 확인한다.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import sharp from "sharp";
 import { createApp } from "../src/app.js";
+import { createDiskStorage } from "../src/media.js";
 import { loadConfig } from "../src/config.js";
 import { openDb } from "../src/db.js";
 import { deriveTagKey, encodeSun } from "../src/crypto.js";
@@ -10,7 +15,7 @@ import { RETENTION, purgeExpired } from "../src/db.js";
 
 const META = "00112233445566778899aabbccddeeff";
 const MASTER = "ffeeddccbbaa99887766554433221100";
-let server, base, db, cfg, clock;
+let server, base, db, cfg, clock, mediaDir;
 const sent = [];
 const CONSENT = { age: true, terms: true, privacy: true };
 
@@ -20,11 +25,15 @@ before(async () => {
   clock = { t: null };
   const now = () => clock.t ?? Date.now();
   const mailer = { async send(m) { sent.push(m); } };
-  server = createApp({ db, cfg, mailer, now, limit: () => {} }).listen(0); // 레이트 리밋은 아래 별도 테스트
+  mediaDir = fs.mkdtempSync(path.join(os.tmpdir(), "meetcha-media-"));
+  server = createApp({ db, cfg, mailer, now, limit: () => {}, storage: createDiskStorage(mediaDir) }).listen(0); // 레이트 리밋은 아래 별도 테스트
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => server.close());
+after(() => {
+  server.close();
+  fs.rmSync(mediaDir, { recursive: true, force: true });
+});
 
 // 쿠키를 기억하는 간단한 클라이언트
 function client() {
@@ -630,4 +639,150 @@ test("가입하지 않은 참가자 명단은 행사 종료 30일 뒤 삭제", a
   assert.equal(n(), 2);
   purgeExpired(db, endsAt + RETENTION.unclaimedInvites + 60_000);
   assert.equal(n(), 1, "가입한 사람(recap-me)의 명단만 남음");
+});
+
+// ---------- 화면을 위해 추가한 서버 기능 ----------
+async function putImage(c, buf, type = "image/jpeg") {
+  const res = await fetch(base + "/api/me/photo", {
+    method: "PUT",
+    headers: { "content-type": type, cookie: Object.entries(c.jar).map(([k, v]) => `${k}=${v}`).join("; ") },
+    body: buf,
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+test("프로필 사진: 재인코딩·메타데이터 제거, 교체 시 옛 파일 삭제, 공개 범위 적용", async () => {
+  const alice = await newUser("photo-a@test.com", { name: "PhotoA" });
+  const stranger = await newUser("photo-s@test.com");
+  // 위치 정보가 든 것처럼 EXIF를 넣은 큰 JPEG
+  const jpeg = await sharp({ create: { width: 1600, height: 1200, channels: 3, background: "#3366cc" } })
+    .withMetadata({ exif: { IFD0: { Copyright: "SECRET-GPS-37.5665,126.9780" } } })
+    .jpeg()
+    .toBuffer();
+  assert.ok(jpeg.includes("SECRET-GPS"));
+  const up = await putImage(alice.c, jpeg);
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  const file = path.join(mediaDir, up.body.photoUrl.split("/").pop());
+  const stored = fs.readFileSync(file);
+  assert.ok(!stored.includes("SECRET-GPS"), "메타데이터 제거");
+  const meta = await sharp(stored).metadata();
+  assert.deepEqual([meta.format, meta.width, meta.height, meta.exif], ["webp", 512, 512, undefined]);
+  const served = await fetch(base + up.body.photoUrl);
+  assert.equal(served.status, 200);
+  assert.match(served.headers.get("cache-control"), /immutable/);
+
+  // 만난 적 없는 사람에게는 사진 주소가 안 보임 (기본 공개 범위: 만난 사람만)
+  assert.equal((await stranger.c.get(`/api/users/${alice.id}`)).body.photoUrl, undefined);
+  assert.equal((await alice.c.get("/api/me")).body.photoUrl, up.body.photoUrl);
+
+  // 이미지가 아니면 거부
+  assert.equal((await putImage(alice.c, Buffer.from("not an image"), "image/png")).body.error, "invalid_image");
+  assert.equal((await putImage(alice.c, Buffer.from("x"), "text/plain")).status, 415);
+
+  // 교체하면 옛 파일 삭제, 삭제하면 파일도 삭제
+  const png = await sharp({ create: { width: 300, height: 300, channels: 4, background: "#ff0000" } }).png().toBuffer();
+  const up2 = await putImage(alice.c, png, "image/png");
+  assert.equal(fs.existsSync(file), false);
+  const file2 = path.join(mediaDir, up2.body.photoUrl.split("/").pop());
+  await alice.c.del("/api/me/photo");
+  assert.equal(fs.existsSync(file2), false);
+  assert.equal((await alice.c.get("/api/me")).body.photoUrl, null);
+  assert.equal((await fetch(base + "/media/../package.json")).status, 404);
+});
+
+test("탈퇴하면 사진 파일도 삭제", async () => {
+  const u = await newUser("photo-del@test.com");
+  const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#00ff00" } }).png().toBuffer();
+  const up = await putImage(u.c, png, "image/png");
+  const file = path.join(mediaDir, up.body.photoUrl.split("/").pop());
+  assert.ok(fs.existsSync(file));
+  await u.c.del("/api/me");
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("행사 목록(운영진), 내 행사 목록(만남 없어도 포함)", async () => {
+  const admin = await adminClient();
+  const live = await liveEvent(admin, "List Live");
+  const past = (await admin.post("/api/admin/events", { name: "List Past", startsAt: Date.now() - 7200_000, endsAt: Date.now() - 3600_000 })).body;
+  const u = await newUser("lists@test.com");
+  await u.c.post("/api/events/checkin", { code: live.checkinCode });
+  const all = (await admin.get("/api/admin/events")).body.events;
+  const l = all.find((e) => e.id === live.id);
+  assert.deepEqual([l.status, l.checkedIn, l.encounters], ["live", 1, 0]);
+  assert.equal(all.find((e) => e.id === past.id).status, "ended");
+  const endedOnly = (await admin.get("/api/admin/events?status=ended")).body.events;
+  assert.ok(endedOnly.every((e) => e.status === "ended") && endedOnly.some((e) => e.id === past.id));
+  assert.equal((await u.c.get("/api/admin/events")).status, 403);
+
+  const mine = (await u.c.get("/api/me/events")).body.events;
+  assert.equal(mine.length, 1);
+  assert.deepEqual([mine[0].name, mine[0].status, mine[0].metCount], ["List Live", "live", 0]);
+});
+
+test("키링 발급 결과를 CSV로 받기 (칩 URL + 등록 코드)", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "CSV Tags");
+  const res = await admin.post("/api/admin/tags", { kind: "static", count: 3, label: 'Batch "A", 2026', eventId: ev.id, format: "csv" }, { raw: true });
+  assert.equal(res.status, 201);
+  assert.match(res.headers.get("content-type"), /text\/csv/);
+  assert.match(res.headers.get("content-disposition"), /attachment/);
+  const lines = (await res.text()).replace(/^\ufeff/, "").trim().split("\r\n");
+  assert.equal(lines.length, 4);
+  assert.equal(lines[0], "tag_id,kind,uid,url,claim_code,event_id,label");
+  assert.ok(lines[1].endsWith(`,${ev.id},"Batch ""A"", 2026"`), lines[1]);
+  const claim = lines[1].split(",")[4];
+  const u = await newUser("csvtag@test.com");
+  assert.equal((await u.c.post("/api/me/tags/claim", { claimCode: claim })).status, 200, "CSV의 등록 코드가 실제로 동작");
+});
+
+test("리캡 공유 이미지: PNG 1080×1350, 참가자만", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "이미지 테스트 밋업");
+  await admin.put(`/api/admin/events/${ev.id}/theme`, { color: "#FFD23F" });
+  const u = await newUser("img@test.com");
+  const other = await newUser("img2@test.com");
+  for (const x of [u, other]) await x.c.post("/api/events/checkin", { code: ev.checkinCode });
+  await u.c.get(await issueStaticTag(admin, other.c));
+  for (const lang of ["ko", "en"]) {
+    const res = await u.c.get(`/api/events/${ev.id}/recap/image?lang=${lang}`, { raw: true });
+    assert.equal(res.status, 200);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const meta = await sharp(buf).metadata();
+    assert.deepEqual([meta.format, meta.width, meta.height], ["png", 1080, 1350]);
+    if (lang === "ko") fs.writeFileSync(path.join(mediaDir, "recap-sample.png"), buf);
+  }
+  assert.equal((await admin.get(`/api/events/${ev.id}/recap/image`)).status, 403);
+});
+
+test("행사장 대형 화면: 로그인 없이 통계·리더보드만, 개인 알림은 안 나감", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Big Screen");
+  const d = (await admin.post(`/api/admin/events/${ev.id}/display`)).body;
+  const a = await newUser("wall-a@test.com", { name: "WallA" });
+  const b = await newUser("wall-b@test.com", { name: "WallB" });
+  await a.c.post("/api/events/checkin", { code: ev.checkinCode, showOnLeaderboard: true });
+  await b.c.post("/api/events/checkin", { code: ev.checkinCode });
+
+  const snap = await fetch(base + d.api).then((r) => r.json());
+  assert.deepEqual([snap.event.name, snap.checkedIn, snap.encounters], ["Big Screen", 2, 0]);
+  const wall = await stream(client(), `${d.api}/stream`); // 쿠키 없는 손님
+  try {
+    assert.equal(wall.status, 200);
+    await wall.wait("ready");
+    await a.c.get(await issueStaticTag(admin, b.c));
+    assert.deepEqual((await wall.wait("activity")).who, { id: a.id, name: "WallA" });
+    assert.equal((await wall.wait("leaderboard")).leaders[0].met, 1);
+    await new Promise((r) => setTimeout(r, 100));
+    assert.ok(!wall.got.some((e) => ["found", "tagged"].includes(e.type)), "개인 알림은 대형 화면에 안 나감");
+  } finally {
+    wall.close();
+  }
+  // 링크를 다시 만들면 이전 링크는 막힘
+  const d2 = (await admin.post(`/api/admin/events/${ev.id}/display`)).body;
+  assert.equal((await fetch(base + d.api)).status, 404);
+  assert.equal((await fetch(base + d2.api)).status, 200);
+  // 행사 끝나고 하루 지나면 막힘
+  db.prepare("UPDATE events SET ends_at = ? WHERE id = ?").run(Date.now() - 25 * 3600_000, ev.id);
+  assert.equal((await fetch(base + d2.api)).status, 410);
 });

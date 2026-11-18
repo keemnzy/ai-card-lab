@@ -11,6 +11,7 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT || 3000),
     origin,
     dbPath: env.DB_PATH || "meetcha.db",
+    uploadDir: env.UPLOAD_DIR || "uploads",
     secureCookies: origin.startsWith("https://"),
     trustProxy: env.TRUST_PROXY ? Number(env.TRUST_PROXY) : false,
     adminEmails: (env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),

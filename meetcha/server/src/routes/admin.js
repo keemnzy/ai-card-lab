@@ -59,7 +59,51 @@ export function adminRoutes({ db, cfg }) {
         }
       } else throw bad("invalid_input", "kind는 static 또는 sun");
     });
+    if (req.body?.format === "csv") {
+      // 칩에 쓸 URL과 포장에 인쇄할 등록 코드. 서버에는 해시만 있으므로 이 파일은 이때 한 번만 받을 수 있다.
+      const cell = (v) => (/[",\r\n]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ""));
+      const lines = [["tag_id", "kind", "uid", "url", "claim_code", "event_id", "label"]].concat(
+        out.map((t) => [t.id, kind, t.uid ?? "", t.url ?? "", t.claimCode, eventId ?? "", label]),
+      );
+      return res
+        .status(201)
+        .type("text/csv; charset=utf-8")
+        .set("Content-Disposition", `attachment; filename="meetcha-tags-${Date.now()}.csv"`)
+        .send("\ufeff" + lines.map((l) => l.map(cell).join(",")).join("\r\n") + "\r\n");
+    }
     res.status(201).json({ tags: out });
+  });
+
+  r.get("/api/admin/events", (req, res) => {
+    const now = Date.now();
+    const status = ["upcoming", "live", "ended"].includes(req.query.status) ? req.query.status : null;
+    const rows = db
+      .prepare(
+        `SELECT e.*,
+           (SELECT COUNT(*) FROM event_attendees a WHERE a.event_id = e.id) AS checked_in,
+           (SELECT COUNT(*) FROM event_invites i WHERE i.event_id = e.id) AS invited,
+           (SELECT COUNT(*) FROM encounters x WHERE x.event_id = e.id) AS encounters,
+           (SELECT COUNT(*) FROM tags t WHERE t.event_id = e.id) AS tags,
+           (SELECT COUNT(*) FROM tags t WHERE t.event_id = e.id AND t.owner_id IS NOT NULL) AS tags_claimed
+         FROM events e ORDER BY e.starts_at DESC LIMIT 500`,
+      )
+      .all();
+    const list = rows
+      .map((e) => ({
+        id: e.id,
+        name: e.name,
+        client: e.client,
+        startsAt: e.starts_at,
+        endsAt: e.ends_at,
+        status: now < e.starts_at ? "upcoming" : now <= e.ends_at ? "live" : "ended",
+        invited: e.invited,
+        checkedIn: e.checked_in,
+        encounters: e.encounters,
+        tags: { issued: e.tags, claimed: e.tags_claimed },
+        recapSentAt: e.recap_sent_at,
+      }))
+      .filter((e) => !status || e.status === status);
+    res.json({ events: list });
   });
 
   r.post("/api/admin/events", (req, res) => {

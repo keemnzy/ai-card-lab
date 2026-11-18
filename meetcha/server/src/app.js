@@ -13,13 +13,15 @@ import { eventRoutes } from "./routes/events.js";
 import { adminRoutes } from "./routes/admin.js";
 import { organizerRoutes } from "./routes/organizer.js";
 import { createBus, createMeet } from "./realtime.js";
+import { MEDIA_NAME_RE, createDiskStorage } from "./media.js";
+import { displayRoutes } from "./routes/display.js";
 
 const LEGAL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../legal");
 
-export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
+export function createApp({ db, cfg, mailer, now, limit = createLimiter(), storage }) {
   const app = express();
   const bus = createBus();
-  const deps = { db, cfg, mailer, limit, now, bus, meet: createMeet(db, bus) };
+  const deps = { db, cfg, mailer, limit, now, bus, meet: createMeet(db, bus), storage: storage ?? createDiskStorage(cfg.uploadDir) };
 
   app.disable("x-powered-by");
   app.set("trust proxy", cfg.trustProxy);
@@ -52,6 +54,12 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
   app.use(loadSession(db));
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  // 프로필 사진. 파일 이름이 추측할 수 없는 무작위 값이고, 사진을 바꾸면 이름도 바뀐다.
+  app.get("/media/:file", (req, res, next) => {
+    if (!MEDIA_NAME_RE.test(req.params.file)) return next();
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(path.resolve(deps.storage.path(req.params.file)), (err) => err && next(new HttpError(404, "not_found", "사진이 없어요")));
+  });
   // 약관·개인정보처리방침 원문 (?lang=en 이면 영문). 정식 화면이 생기면 그쪽에서 보기 좋게 렌더링한다.
   const LEGAL = { terms: "terms-of-service", privacy: "privacy-policy" };
   app.get("/legal/:doc", (req, res, next) => {
@@ -68,6 +76,7 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
   app.use(eventRoutes(deps));
   app.use(adminRoutes(deps));
   app.use(organizerRoutes(deps));
+  app.use(displayRoutes(deps));
 
   app.use("/api", (_req, _res, next) => next(new HttpError(404, "not_found", "없는 API예요")));
   // eslint-disable-next-line no-unused-vars

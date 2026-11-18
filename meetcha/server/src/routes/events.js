@@ -4,6 +4,7 @@ import { sha256 } from "../crypto.js";
 import { HttpError, forbidden, notFound, requireUser, str } from "../lib.js";
 import { MAX_STREAMS_PER_USER, eventStats, leaderboard, openStream } from "../realtime.js";
 import { checkIn, eventTheme } from "../checkin.js";
+import { photoUrl, recapImage } from "../media.js";
 import { viewProfile } from "./social.js";
 
 export function eventRoutes({ db, limit, bus }) {
@@ -46,7 +47,7 @@ export function eventRoutes({ db, limit, bus }) {
     const live = now >= e.starts_at && now <= e.ends_at;
     const rows = db
       .prepare(
-        `SELECT u.id, u.name, u.role, u.org, u.hint, a.checked_in_at,
+        `SELECT u.id, u.name, u.role, u.org, u.hint, u.photo, a.checked_in_at,
                 (SELECT 1 FROM encounters x WHERE x.scanner_id = ? AND x.owner_id = u.id) AS found
          FROM event_attendees a JOIN users u ON u.id = a.user_id
          WHERE a.event_id = ? AND u.id != ? AND u.deleted_at IS NULL AND (u.suspended_until IS NULL OR u.suspended_until <= ?)
@@ -55,11 +56,26 @@ export function eventRoutes({ db, limit, bus }) {
       .all(req.user.id, e.id, req.user.id, Date.now());
     const slots = rows.map((u, i) =>
       u.found
-        ? { slot: i + 1, found: true, user: { id: u.id, name: u.name, role: u.role, org: u.org } }
+        ? { slot: i + 1, found: true, user: { id: u.id, name: u.name, role: u.role, org: u.org, photoUrl: photoUrl(u.photo) } }
         : { slot: i + 1, found: false, hint: live ? u.hint || null : null },
     );
     const found = slots.filter((s) => s.found).length;
     res.json({ event: { id: e.id, name: e.name, startsAt: e.starts_at, endsAt: e.ends_at, live, theme: eventTheme(e) }, found, total: slots.length, slots });
+  });
+
+  // 리캡 공유 이미지 (PNG 1080×1350). 내 기록만, 만난 사람의 이름·얼굴은 넣지 않는다.
+  r.get("/api/events/:id/recap/image", requireUser, async (req, res, next) => {
+    try {
+      const e = getEvent(req.params.id);
+      if (!isAttendee(e.id, req.user.id)) throw forbidden("not_attendee", "체크인한 참가자만 볼 수 있어요");
+      limit(`recap-img:${req.user.id}`, 30, 3600_000);
+      const metCount = db.prepare("SELECT COUNT(*) AS n FROM encounters WHERE scanner_id = ? AND event_id = ?").get(req.user.id, e.id).n;
+      const metMeCount = db.prepare("SELECT COUNT(*) AS n FROM encounters WHERE owner_id = ? AND event_id = ?").get(req.user.id, e.id).n;
+      const png = await recapImage({ eventName: e.name, color: e.color, metCount, metMeCount, lang: req.query.lang === "en" ? "en" : "ko" });
+      res.type("png").set("Cache-Control", "private, no-store").send(png);
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 행사 리캡: 이 행사에서 만난 사람, 나를 만난 사람 수, 아직 안 푼 퀴즈. 행사 중에도 볼 수 있고 끝나면 final.

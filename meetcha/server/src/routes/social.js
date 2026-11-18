@@ -4,6 +4,7 @@ import { randomId } from "../crypto.js";
 import { HttpError, forbidden, isSuspended, notFound, requireUser, str } from "../lib.js";
 import { hasScanned, haveMet } from "../encounters.js";
 import { loadLinks } from "./me.js";
+import { photoUrl } from "../media.js";
 
 /**
  * 공개 범위에 따라 보여 줄 프로필을 만든다.
@@ -22,7 +23,7 @@ export function viewProfile(db, viewerId, ownerId) {
   const quizCount = db.prepare("SELECT COUNT(*) AS n FROM quiz_questions WHERE user_id = ?").get(ownerId).n;
   const base = { id: u.id, name: u.name || "이름 없음", deleted: !!u.deleted_at, limited: !full };
   if (!full) return base;
-  return { ...base, role: u.role, org: u.org, oneLiner: u.one_liner, links: loadLinks(db, ownerId), quizCount };
+  return { ...base, photoUrl: photoUrl(u.photo), role: u.role, org: u.org, oneLiner: u.one_liner, links: loadLinks(db, ownerId), quizCount };
 }
 
 export function socialRoutes({ db, limit }) {

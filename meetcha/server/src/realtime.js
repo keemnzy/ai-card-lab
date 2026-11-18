@@ -67,8 +67,9 @@ export function createMeet(db, bus) {
     const r = recordEncounter(db, scannerId, ownerId, verified, now);
     if (!r?.isNew || !r.eventId) return r;
     const ev = r.eventId;
-    const user = (id) => db.prepare("SELECT id, name, role, org FROM users WHERE id = ?").get(id);
-    const owner = user(ownerId);
+    const user = (id) => db.prepare("SELECT id, name, role, org, photo FROM users WHERE id = ?").get(id);
+    const { photo, ...owner } = user(ownerId);
+    owner.photoUrl = photo ? `/media/${photo}` : null;
     const scanner = user(scannerId);
     bus.publish(ev, "found", { user: { ...owner } }, { to: scannerId });
     bus.publish(ev, "tagged", { by: { id: scanner.id, name: scanner.name } }, { to: ownerId });

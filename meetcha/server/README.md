@@ -10,7 +10,7 @@ NFC 키링 태그 → 프로필 → 도감 → 퀴즈 → 메모·메시지, 그
 ```bash
 cd meetcha/server
 npm install
-npm test          # 테스트 25개
+npm test          # 테스트 31개
 npm run seed      # 예시 참가자 3명 + 키링 + 진행 중 이벤트 생성, 키링 URL 출력
 npm run dev       # http://localhost:3000
 ```
@@ -25,6 +25,7 @@ npm run dev       # http://localhost:3000
 | `APP_ORIGIN` | 서비스 주소. 운영에서는 반드시 `https://` | `http://localhost:3000` |
 | `PORT` | 포트 | `3000` |
 | `DB_PATH` | SQLite 파일 경로 | `meetcha.db` |
+| `UPLOAD_DIR` | 프로필 사진 저장 폴더 (운영에서는 객체 저장소로 교체) | `uploads` |
 | `ADMIN_EMAILS` | 운영진 이메일(쉼표 구분). 키링 발급·이벤트 생성 가능 | 없음 |
 | `SUN_META_KEY` | NTAG 424 DNA 공통 읽기 키 (32자리 hex) | 없음 |
 | `SUN_MASTER_KEY` | 칩별 파일 키를 만드는 마스터 키 (32자리 hex) | 없음 |
@@ -42,6 +43,10 @@ npm run dev       # http://localhost:3000
 | POST | `/api/auth/verify` | `{token, consent?}` 로그인. 처음 가입이면 `consent: {age, terms, privacy}` 모두 true 필요. 로그인 전에 태그한 키링이 있으면 도감에 추가 |
 | POST | `/api/auth/logout` | 로그아웃 |
 | GET | `/api/me` | 내 프로필·링크·퀴즈(정답 포함)·키링 |
+| PUT | `/api/me/photo` | 프로필 사진 (본문에 이미지 그대로, JPEG·PNG·WebP·HEIC, 5MB 이하) → 512×512 WebP, 메타데이터 제거 |
+| DELETE | `/api/me/photo` | 사진 삭제 |
+| GET | `/api/me/events` | 내가 체크인한 행사 목록 (만남이 없어도 포함) |
+| GET | `/media/:file` | 프로필 사진 파일 |
 | PUT | `/api/me/profile` | `{name, role, org, oneLiner, hint, visibility}` |
 | PUT | `/api/me/links` | `{links:[{label,url}]}` 최대 8개, https만 |
 | PUT | `/api/me/quiz` | `{quiz:[{question, options[4], answer}]}` 최대 5문제 |
@@ -68,17 +73,22 @@ npm run dev       # http://localhost:3000
 | GET | `/api/events/:id/leaderboard` | 리더보드 (동의한 사람만) |
 | GET | `/api/events/:id/stream` | 실시간 피드 (SSE, 아래 참고) |
 | GET | `/api/events/:id/recap` | 행사 리캡: 만난 사람, 나를 만난 사람 수, 순위, 안 푼 퀴즈 |
+| GET | `/api/events/:id/recap/image` | 리캡 공유 이미지 PNG 1080×1350 (`?lang=en`). 만난 사람 이름·얼굴은 넣지 않음 |
+| GET | `/api/display/:token` | 행사장 대형 화면용 스냅숏 (로그인 없음) |
+| GET | `/api/display/:token/stream` | 대형 화면용 실시간 피드 (개인 알림 제외) |
 | PUT | `/api/events/:id/leaderboard-consent` | `{show}` 리더보드 동의 바꾸기 |
 | GET | `/claim` | 행사용 키링 첫 태그 후 등록 확인 페이지 (HTML) |
 | POST | `/api/me/tags/claim-tap` | 방금 태그한 행사용 키링을 내 것으로 등록 + 체크인 |
-| POST | `/api/admin/tags` | 키링 발급 `{kind:"static", count}` 또는 `{kind:"sun", uids:[...]}`. `eventId`를 주면 행사용 키링 |
+| POST | `/api/admin/tags` | 키링 발급 `{kind:"static", count}` 또는 `{kind:"sun", uids:[...]}`. `eventId`를 주면 행사용 키링, `format:"csv"`면 칩 URL·등록 코드를 CSV 파일로 (이때 한 번만 받을 수 있음) |
 | POST | `/api/admin/events/:id/attendees/import` | 참가자 명단 `{csv}` 또는 `{attendees:[...]}` |
 | GET | `/api/admin/events/:id/attendees` | 명단, 가입·체크인 현황 |
 | POST | `/api/admin/events/:id/invites/send` | 행사 전 "카드 미리 만들기" 메일 (안 보낸 사람만) |
 | PUT | `/api/admin/events/:id/theme` | `{logoUrl, color, welcome}` |
 | POST | `/api/admin/events/:id/desk` | `{on}` 이 기기를 체크인 데스크로 |
 | POST | `/api/admin/events/:id/recap/send` | 행사 끝난 뒤 리캡 메일 (한 번만) |
+| GET | `/api/admin/events` | 행사 목록 (`?status=upcoming\|live\|ended`), 명단·체크인·만남·키링 현황 |
 | POST | `/api/admin/events` | 이벤트 생성 → 체크인 코드 |
+| POST | `/api/admin/events/:id/display` | 대형 화면 링크 만들기 (다시 만들면 이전 링크 막힘, 행사 종료 하루 뒤 만료) |
 | GET | `/api/admin/events/:id/report` | 고객사용 리포트 (통계만) |
 | GET | `/api/admin/reports?status=open` | 신고 목록 (신고가 많이 쌓인 사람 먼저) |
 | POST | `/api/admin/reports/:id/resolve` | `{status: "actioned"\|"dismissed", note}` |
@@ -130,10 +140,16 @@ CSV는 첫 줄에 열 이름이 있어야 하고 `email`은 필수. `name` 또�
 - **신고·이용 정지**: 정지된 계정은 로그인 불가, 명함은 이름만 보이고 키링은 열리지 않으며 이벤트 보드에서도 빠진다.
 - **개인정보**: 공개 범위 3단계(기본 "만난 사람만"), 힌트는 행사 시간에만, 리더보드는 동의자만, 고객사 리포트는 통계만, 탈퇴 시 개인정보 삭제.
 
+## 서버 설치 시 필요한 것
+
+- 리캡 공유 이미지에 한글을 그리려면 서버에 한글 글꼴이 있어야 한다. Debian/Ubuntu: `apt-get install -y fonts-noto-cjk`
+- 이미지 처리는 `sharp` 패키지(libvips 포함)를 쓴다. `npm install` 때 운영체제에 맞는 바이너리를 받는다.
+
 ## 운영 전에 남은 일
 
 - [ ] 메일 발송 연결 (`src/server.js`의 `mailer`, 예: Resend / AWS SES)
 - [ ] 프론트엔드를 이 API에 연결 (`../prototype.html` 화면 기준)
 - [ ] NTAG 424 DNA 칩 프로비저닝 도구 (칩에 SDM 설정 + `deriveTagKey`로 만든 키 기록)
+- [ ] 프로필 사진 저장소를 S3 등 객체 저장소로 (`src/media.js`의 `createDiskStorage`와 같은 put/del/path 모양)
 - [ ] 여러 서버로 늘릴 때: 레이트 리밋과 실시간 피드를 Redis로, DB를 Postgres로
 - [ ] 개인정보처리방침·이용약관 빈칸 채우기·변호사 검토 (`../legal/`)

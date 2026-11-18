@@ -1,5 +1,7 @@
 // 내 명함: 프로필, 링크, 퀴즈, 키링 등록, 탈퇴.
-import { Router } from "express";
+import express, { Router } from "express";
+import { PHOTO_MAX_BYTES, PHOTO_TYPES, photoUrl, processPhoto } from "../media.js";
+import { eventTheme } from "../checkin.js";
 import { sha256 } from "../crypto.js";
 import { tx } from "../db.js";
 import { HttpError, SESSION_COOKIE, TERMS_VERSION, bad, httpsUrl, int, notFound, requireUser, str } from "../lib.js";
@@ -16,9 +18,65 @@ export function loadQuiz(db, userId) {
 export const loadLinks = (db, userId) =>
   db.prepare("SELECT label, url FROM links WHERE user_id = ? ORDER BY pos").all(userId).map((l) => ({ ...l }));
 
-export function meRoutes({ db, limit }) {
+export function meRoutes({ db, limit, storage }) {
   const r = Router();
   r.use("/api/me", requireUser);
+
+  // 프로필 사진: 요청 본문에 이미지 그대로 (Content-Type: image/jpeg 등). PUT이라 다른 사이트에서 보낼 수 없다.
+  r.put("/api/me/photo", express.raw({ type: PHOTO_TYPES, limit: PHOTO_MAX_BYTES }), async (req, res, next) => {
+    try {
+      limit(`photo:${req.user.id}`, 20, 3600_000);
+      if (!Buffer.isBuffer(req.body) || !req.body.length)
+        throw new HttpError(415, "image_required", "JPEG, PNG, WebP, HEIC 사진을 올려 주세요 (5MB 이하)");
+      const out = await processPhoto(req.body);
+      if (!out) throw bad("invalid_image", "사진을 읽을 수 없어요. 다른 사진으로 시도해 주세요");
+      await storage.put(out.name, out.buf);
+      const old = db.prepare("SELECT photo FROM users WHERE id = ?").get(req.user.id).photo;
+      db.prepare("UPDATE users SET photo = ? WHERE id = ?").run(out.name, req.user.id);
+      if (old) await storage.del(old);
+      res.json({ ok: true, photoUrl: photoUrl(out.name) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.delete("/api/me/photo", async (req, res, next) => {
+    try {
+      const old = db.prepare("SELECT photo FROM users WHERE id = ?").get(req.user.id).photo;
+      db.prepare("UPDATE users SET photo = NULL WHERE id = ?").run(req.user.id);
+      if (old) await storage.del(old);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // 내가 체크인한 행사들 (만난 사람이 없어도 포함). 리캡 목록에 쓴다.
+  r.get("/api/me/events", (req, res) => {
+    const now = Date.now();
+    const rows = db
+      .prepare(
+        `SELECT e.*, a.checked_in_at,
+           (SELECT COUNT(*) FROM encounters x WHERE x.scanner_id = a.user_id AND x.event_id = e.id) AS met,
+           (SELECT COUNT(*) FROM encounters x WHERE x.owner_id = a.user_id AND x.event_id = e.id) AS met_me
+         FROM event_attendees a JOIN events e ON e.id = a.event_id
+         WHERE a.user_id = ? ORDER BY e.starts_at DESC`,
+      )
+      .all(req.user.id);
+    res.json({
+      events: rows.map((e) => ({
+        id: e.id,
+        name: e.name,
+        startsAt: e.starts_at,
+        endsAt: e.ends_at,
+        status: now < e.starts_at ? "upcoming" : now <= e.ends_at ? "live" : "ended",
+        theme: eventTheme(e),
+        checkedInAt: e.checked_in_at,
+        metCount: e.met,
+        metMeCount: e.met_me,
+      })),
+    });
+  });
 
   r.get("/api/me", (req, res) => {
     const u = req.user;
@@ -30,6 +88,7 @@ export function meRoutes({ db, limit }) {
       org: u.org,
       oneLiner: u.one_liner,
       hint: u.hint,
+      photoUrl: photoUrl(u.photo),
       visibility: u.visibility,
       // 약관이 바뀌었으면 화면에서 다시 동의를 받아 POST /api/me/consent 로 보낸다
       consentRequired: u.terms_version !== TERMS_VERSION,
@@ -119,6 +178,7 @@ export function meRoutes({ db, limit }) {
   // 탈퇴: 개인정보를 지우고, 다른 사람 도감에는 "탈퇴한 사용자"로 남는다.
   r.delete("/api/me", (req, res) => {
     const id = req.user.id;
+    if (req.user.photo) storage.del(req.user.photo).catch((e) => console.error("사진 삭제 실패", e));
     tx(db, () => {
       for (const sql of [
         "DELETE FROM links WHERE user_id = ?",
@@ -137,7 +197,7 @@ export function meRoutes({ db, limit }) {
         db.prepare(sql).run(...Array(n).fill(id));
       }
       db.prepare(
-        "UPDATE users SET email = NULL, name = '탈퇴한 사용자', role = '', org = '', one_liner = '', hint = '', visibility = 'private', deleted_at = ? WHERE id = ?",
+        "UPDATE users SET email = NULL, name = '탈퇴한 사용자', role = '', org = '', one_liner = '', hint = '', photo = NULL, visibility = 'private', deleted_at = ? WHERE id = ?",
       ).run(Date.now(), id);
     });
     res.clearCookie(SESSION_COOKIE, { path: "/" });

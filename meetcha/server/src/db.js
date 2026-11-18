@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
   role         TEXT NOT NULL DEFAULT '',
   org          TEXT NOT NULL DEFAULT '',
   one_liner    TEXT NOT NULL DEFAULT '',
-  hint         TEXT NOT NULL DEFAULT '',    -- 이벤트 보드에서 가려진 카드에 보일 힌트 (본인이 직접 입력)
+  hint         TEXT NOT NULL DEFAULT '',
+  photo        TEXT,                        -- 프로필 사진 파일 이름 (재인코딩된 WebP)    -- 이벤트 보드에서 가려진 카드에 보일 힌트 (본인이 직접 입력)
   visibility   TEXT NOT NULL DEFAULT 'encountered' CHECK (visibility IN ('public','encountered','private')),
   terms_version   TEXT,                     -- 동의한 약관·처리방침 버전
   consented_at    INTEGER,                  -- 만 14세 이상 확인 + 약관·처리방침 동의 시각
@@ -154,6 +155,7 @@ CREATE TABLE IF NOT EXISTS events (
   color         TEXT NOT NULL DEFAULT '',   -- #RRGGBB
   welcome       TEXT NOT NULL DEFAULT '',
   recap_sent_at INTEGER,
+  display_hash  TEXT UNIQUE,                -- 행사장 대형 화면용 공개 링크 토큰 해시
   created_at    INTEGER NOT NULL
 );
 
