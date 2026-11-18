@@ -95,7 +95,7 @@ test("프로필: https 링크만 허용, 퀴즈는 보기 4개", async () => {
 });
 
 async function issueStaticTag(admin, owner) {
-  const r = await admin.post("/api/admin/tags", { kind: "static", count: 1, label: "GSCC" });
+  const r = await admin.post("/api/admin/tags", { kind: "static", count: 1, label: "GSSC" });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   const [t] = r.body.tags;
   assert.equal((await owner.post("/api/me/tags/claim", { claimCode: t.claimCode.toLowerCase() })).status, 200);
@@ -192,7 +192,7 @@ test("NTAG 424 DNA: 서명 확인, 복사된 링크(카운터 재사용)는 도�
   const admin = client();
   await login(admin, "admin@bs.kr");
   const uid = "04A1B2C3D4E5F6";
-  const r = await admin.post("/api/admin/tags", { kind: "sun", uids: [uid], label: "GSCC" });
+  const r = await admin.post("/api/admin/tags", { kind: "sun", uids: [uid], label: "GSSC" });
   const owner = await newUser("sunowner@test.com", { name: "Sun" });
   await owner.c.post("/api/me/tags/claim", { claimCode: r.body.tags[0].claimCode });
   const keys = { metaKey: Buffer.from(META, "hex"), fileKey: deriveTagKey(Buffer.from(MASTER, "hex"), Buffer.from(uid, "hex")) };
@@ -223,7 +223,7 @@ test("NTAG 424 DNA: 서명 확인, 복사된 링크(카운터 재사용)는 도�
 test("이벤트: 체크인 → 가려진 보드 → 태그하면 공개 → 리더보드·리포트", async () => {
   const admin = client();
   await login(admin, "admin@bs.kr");
-  const ev = await admin.post("/api/admin/events", { name: "GSCC 네트워킹 나이트", client: "GSCC", startsAt: Date.now() - 60_000, endsAt: Date.now() + 3600_000 });
+  const ev = await admin.post("/api/admin/events", { name: "GSSC 네트워킹 나이트", client: "GSSC", startsAt: Date.now() - 60_000, endsAt: Date.now() + 3600_000 });
   assert.equal(ev.status, 201);
   const p1 = await newUser("e1@test.com", { name: "E1", hint: "기획" });
   const p2 = await newUser("e2@test.com", { name: "E2", hint: "디자인" });

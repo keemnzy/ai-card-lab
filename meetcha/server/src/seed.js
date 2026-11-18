@@ -15,7 +15,7 @@ const people = [
     quiz: [["하늘님이 해본 사용자 인터뷰 횟수는?", ["30번", "100번", "300번", "1000번"], 2]] },
   { email: "junho@example.com", name: "이준호", role: "Backend Engineer", org: "스타트업 A", hint: "개발", one: "주말엔 클라이밍, 평일엔 Postgres 튜닝.",
     quiz: [["준호님의 주말 취미는?", ["러닝", "클라이밍", "서핑", "보드게임"], 1]] },
-  { email: "seoyeon@example.com", name: "박서연", role: "Brand Designer", org: "GSCC 운영진", hint: "디자인", one: "이 키링 3D 모델링한 사람이 저예요.",
+  { email: "seoyeon@example.com", name: "박서연", role: "Brand Designer", org: "GSSC 운영진", hint: "디자인", one: "이 키링 3D 모델링한 사람이 저예요.",
     quiz: [["서연님이 오늘 만든 것은?", ["포스터", "키링 3D 모델", "웹사이트", "명찰"], 1]] },
 ];
 
@@ -24,7 +24,7 @@ const out = [];
 tx(db, () => {
   const eventId = randomId();
   db.prepare("INSERT INTO events (id, name, client, starts_at, ends_at, checkin_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-    eventId, "GSCC 네트워킹 나이트 (예시)", "GSCC", now - 600_000, now + 4 * 3600_000, sha256(checkin), now,
+    eventId, "GSSC 네트워킹 나이트 (예시)", "GSSC", now - 600_000, now + 4 * 3600_000, sha256(checkin), now,
   );
   for (const p of people) {
     if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(p.email)) continue;
