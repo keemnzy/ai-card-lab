@@ -43,17 +43,22 @@ export const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 
 // ---------- 레이트 리밋 (메모리, 고정 윈도) ----------
 // 서버가 여러 대가 되면 Redis 등 공유 저장소로 바꿔야 한다.
+// 개인정보처리방침: 요청 제한용 IP는 메모리에만, 창이 끝나면(최대 1시간) 1분 안에 지운다.
 export function createLimiter() {
   const hits = new Map();
+  let lastSweep = Date.now();
   return function limit(key, max, windowMs) {
     const now = Date.now();
+    if (now - lastSweep > 60_000) {
+      for (const [k, v] of hits) if (v.reset <= now) hits.delete(k);
+      lastSweep = now;
+    }
     let h = hits.get(key);
     if (!h || h.reset <= now) {
       h = { n: 0, reset: now + windowMs };
       hits.set(key, h);
     }
     h.n++;
-    if (hits.size > 50_000) for (const [k, v] of hits) if (v.reset <= now) hits.delete(k);
     if (h.n > max) throw new HttpError(429, "rate_limited", "요청이 너무 많아요. 잠시 후 다시 시도해 주세요");
   };
 }
