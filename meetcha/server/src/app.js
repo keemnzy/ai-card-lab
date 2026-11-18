@@ -1,5 +1,7 @@
 // Express 앱 조립. 테스트에서도 같은 함수로 앱을 만든다.
 import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { HttpError, createLimiter, loadSession } from "./lib.js";
 import { authRoutes } from "./routes/auth.js";
@@ -9,6 +11,8 @@ import { quizRoutes } from "./routes/quiz.js";
 import { tagRoutes } from "./routes/tags.js";
 import { eventRoutes } from "./routes/events.js";
 import { adminRoutes } from "./routes/admin.js";
+
+const LEGAL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../legal");
 
 export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
   const app = express();
@@ -45,6 +49,14 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
   app.use(loadSession(db));
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  // 약관·개인정보처리방침 원문 (?lang=en 이면 영문). 정식 화면이 생기면 그쪽에서 보기 좋게 렌더링한다.
+  const LEGAL = { terms: "terms-of-service", privacy: "privacy-policy" };
+  app.get("/legal/:doc", (req, res, next) => {
+    const name = LEGAL[req.params.doc];
+    if (!name) return next();
+    const file = path.join(LEGAL_DIR, `${name}${req.query.lang === "en" ? ".en" : ""}.md`);
+    res.type("text/plain; charset=utf-8").sendFile(file, (err) => err && next(new HttpError(404, "not_found", "문서를 찾을 수 없어요")));
+  });
   app.use(authRoutes(deps));
   app.use(meRoutes(deps));
   app.use(socialRoutes(deps));

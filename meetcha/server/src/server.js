@@ -1,6 +1,6 @@
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { openDb } from "./db.js";
+import { openDb, purgeExpired } from "./db.js";
 
 const cfg = loadConfig();
 const db = openDb(cfg.dbPath);
@@ -14,13 +14,9 @@ const mailer = {
   },
 };
 
-// 만료된 로그인 토큰·세션·대기 태그 정리 (1시간마다)
-setInterval(() => {
-  const now = Date.now();
-  db.prepare("DELETE FROM login_tokens WHERE expires_at < ?").run(now - 86400_000);
-  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(now);
-  db.prepare("DELETE FROM pending_scans WHERE expires_at < ?").run(now);
-}, 3600_000).unref();
+// 보관 기간이 지난 데이터 정리 (1시간마다)
+setInterval(() => purgeExpired(db), 3600_000).unref();
+purgeExpired(db);
 
 createApp({ db, cfg, mailer }).listen(cfg.port, () => {
   console.log(`Meetcha 서버: ${cfg.origin} (포트 ${cfg.port})`);

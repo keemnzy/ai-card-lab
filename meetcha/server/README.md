@@ -10,7 +10,7 @@ NFC 키링 태그 → 프로필 → 도감 → 퀴즈 → 메모·메시지, 그
 ```bash
 cd meetcha/server
 npm install
-npm test          # 테스트 13개
+npm test          # 테스트 17개
 npm run seed      # 예시 참가자 3명 + 키링 + 진행 중 이벤트 생성, 키링 URL 출력
 npm run dev       # http://localhost:3000
 ```
@@ -39,12 +39,13 @@ npm run dev       # http://localhost:3000
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | POST | `/api/auth/request` | `{email}` 로그인 링크 메일 발송 |
-| POST | `/api/auth/verify` | `{token}` 로그인. 로그인 전에 태그한 키링이 있으면 도감에 추가 |
+| POST | `/api/auth/verify` | `{token, consent?}` 로그인. 처음 가입이면 `consent: {age, terms, privacy}` 모두 true 필요. 로그인 전에 태그한 키링이 있으면 도감에 추가 |
 | POST | `/api/auth/logout` | 로그아웃 |
 | GET | `/api/me` | 내 프로필·링크·퀴즈(정답 포함)·키링 |
 | PUT | `/api/me/profile` | `{name, role, org, oneLiner, hint, visibility}` |
 | PUT | `/api/me/links` | `{links:[{label,url}]}` 최대 8개, https만 |
 | PUT | `/api/me/quiz` | `{quiz:[{question, options[4], answer}]}` 최대 5문제 |
+| POST | `/api/me/consent` | `{age, terms, privacy}` 약관이 바뀐 뒤 다시 동의 (`/api/me`의 `consentRequired`) |
 | POST | `/api/me/tags/claim` | `{claimCode}` 포장에 인쇄된 코드로 내 키링 등록 |
 | POST | `/api/me/tags/:id/lost` | 분실 신고 (즉시 비활성화) |
 | DELETE | `/api/me` | 탈퇴 |
@@ -57,6 +58,7 @@ npm run dev       # http://localhost:3000
 | POST | `/api/users/:id/messages` | 메시지 (만난 사이만) |
 | GET | `/api/me/messages` | 받은 메시지 |
 | POST | `/api/users/:id/block` | 차단 |
+| POST | `/api/users/:id/report` | `{reason, detail}` 신고 (만난 사람이나 전체 공개 명함만) |
 | POST | `/api/users/:id/quiz/attempts` | 퀴즈 시작 (도감에 있는 사람만) |
 | POST | `/api/quiz/attempts/:aid/answer` | `{choice: 0~3, -1=시간 초과}` 서버가 채점·점수 계산 |
 | POST | `/api/events/checkin` | `{code, showOnLeaderboard}` 행사 체크인 |
@@ -65,6 +67,11 @@ npm run dev       # http://localhost:3000
 | POST | `/api/admin/tags` | 키링 발급 `{kind:"static", count}` 또는 `{kind:"sun", uids:[...]}` |
 | POST | `/api/admin/events` | 이벤트 생성 → 체크인 코드 |
 | GET | `/api/admin/events/:id/report` | 고객사용 리포트 (통계만) |
+| GET | `/api/admin/reports?status=open` | 신고 목록 (신고가 많이 쌓인 사람 먼저) |
+| POST | `/api/admin/reports/:id/resolve` | `{status: "actioned"\|"dismissed", note}` |
+| POST | `/api/admin/users/:id/suspend` | `{days?, reason}` 이용 정지 (days 없으면 영구), 로그인 즉시 끊김 |
+| POST | `/api/admin/users/:id/unsuspend` | 정지 해제 |
+| GET | `/legal/terms`, `/legal/privacy` | 약관·처리방침 원문 (`?lang=en` 영문) |
 
 ## 보안에서 구현된 것
 
@@ -76,6 +83,9 @@ npm run dev       # http://localhost:3000
 - **CSRF**: 다른 출처의 요청 거부 + POST는 JSON만.
 - **헤더**: CSP(요청마다 nonce), X-Frame-Options, nosniff, HSTS(https).
 - **레이트 리밋**: 로그인 요청, 로그인 확인, 태그, 메시지, 체크인, 키링 등록.
+- **가입 동의**: 만 14세 이상·약관·처리방침 동의 없이는 가입 불가, 동의 버전과 일시 기록.
+- **보관 기간 자동 삭제**: 로그인 기록 3개월, 신고 1년, 만료된 로그인 링크·세션은 1시간마다 정리.
+- **신고·이용 정지**: 정지된 계정은 로그인 불가, 명함은 이름만 보이고 키링은 열리지 않으며 이벤트 보드에서도 빠진다.
 - **개인정보**: 공개 범위 3단계(기본 "만난 사람만"), 힌트는 행사 시간에만, 리더보드는 동의자만, 고객사 리포트는 통계만, 탈퇴 시 개인정보 삭제.
 
 ## 운영 전에 남은 일
@@ -84,4 +94,4 @@ npm run dev       # http://localhost:3000
 - [ ] 프론트엔드를 이 API에 연결 (`../prototype.html` 화면 기준)
 - [ ] NTAG 424 DNA 칩 프로비저닝 도구 (칩에 SDM 설정 + `deriveTagKey`로 만든 키 기록)
 - [ ] 여러 서버로 늘릴 때: 레이트 리밋을 Redis로, DB를 Postgres로
-- [ ] 개인정보처리방침·이용약관
+- [ ] 개인정보처리방침·이용약관 빈칸 채우기·변호사 검토 (`../legal/`)

@@ -3,7 +3,7 @@
 // 실제 로그인은 그 페이지의 버튼(POST)에서 한다.
 import { Router } from "express";
 import { randomId, randomToken, sha256 } from "../crypto.js";
-import { EMAIL_RE, HttpError, PENDING_COOKIE, SESSION_COOKIE, bad, cookieOptions, str } from "../lib.js";
+import { EMAIL_RE, HttpError, PENDING_COOKIE, SESSION_COOKIE, TERMS_VERSION, bad, cookieOptions, isSuspended, str } from "../lib.js";
 import { recordEncounter } from "../encounters.js";
 import { page } from "../pages.js";
 
@@ -43,14 +43,24 @@ export function authRoutes({ db, cfg, mailer, limit }) {
       page(
         "로그인",
         `<h1>Meetcha 로그인</h1><p>아래 버튼을 누르면 로그인돼요.</p>
+         <div id="consent" hidden>
+           <p><b>처음 오셨군요!</b> 가입하려면 아래 내용에 동의해 주세요.</p>
+           <label><input type="checkbox" id="c-age"> [필수] 만 14세 이상입니다.</label><br>
+           <label><input type="checkbox" id="c-terms"> [필수] <a href="/legal/terms" target="_blank">이용약관</a>에 동의합니다.</label><br>
+           <label><input type="checkbox" id="c-privacy"> [필수] <a href="/legal/privacy" target="_blank">개인정보 수집·이용</a>에 동의합니다.
+             <span class="muted">(수집 항목: 이메일, 이름 · 목적: 회원 식별, 로그인, 명함 표시 · 보유 기간: 탈퇴 시까지. 동의하지 않으면 가입할 수 없어요.)</span></label>
+         </div>
          <button id="go">로그인</button><p id="msg"></p>
          <script nonce="${res.locals.nonce}">
-           document.getElementById("go").onclick = async () => {
-             const r = await fetch("/api/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" },
-               body: JSON.stringify({ token: ${JSON.stringify(token).replace(/</g, "\\u003c")} }) });
+           const $ = (id) => document.getElementById(id);
+           $("go").onclick = async () => {
+             const body = { token: ${JSON.stringify(token).replace(/</g, "\\u003c")} };
+             if (!$("consent").hidden) body.consent = { age: $("c-age").checked, terms: $("c-terms").checked, privacy: $("c-privacy").checked };
+             const r = await fetch("/api/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
              const j = await r.json();
-             if (r.ok) location.href = j.redirect || "/";
-             else document.getElementById("msg").textContent = j.message;
+             if (r.ok) return (location.href = j.redirect || "/");
+             if (j.error === "consent_required") { $("consent").hidden = false; $("go").textContent = "동의하고 가입하기"; }
+             $("msg").textContent = j.message;
            };
          </script>`,
       ),
@@ -64,14 +74,28 @@ export function authRoutes({ db, cfg, mailer, limit }) {
     const row = db.prepare("SELECT * FROM login_tokens WHERE token_hash = ?").get(sha256(token));
     if (!row || row.used_at || row.expires_at < now)
       throw new HttpError(400, "invalid_token", "링크가 만료됐거나 이미 사용됐어요. 다시 요청해 주세요");
-    db.prepare("UPDATE login_tokens SET used_at = ? WHERE token_hash = ?").run(now, row.token_hash);
 
     let user = db.prepare("SELECT * FROM users WHERE email = ?").get(row.email);
+    // 새 회원은 만 14세 이상 확인과 약관·처리방침 동의가 있어야 가입된다. 동의 전에는 링크를 소모하지 않는다.
+    if (!user) {
+      const c = req.body?.consent;
+      if (!(c?.age === true && c?.terms === true && c?.privacy === true))
+        throw new HttpError(409, "consent_required", "만 14세 이상 확인과 이용약관·개인정보 수집 동의가 모두 필요해요");
+    }
+    if (isSuspended(user, now)) throw new HttpError(403, "account_suspended", "이용이 정지된 계정이에요");
+    db.prepare("UPDATE login_tokens SET used_at = ? WHERE token_hash = ?").run(now, row.token_hash);
     if (!user) {
       const id = randomId();
-      db.prepare("INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)").run(id, row.email, now);
+      db.prepare("INSERT INTO users (id, email, terms_version, consented_at, created_at) VALUES (?, ?, ?, ?, ?)").run(
+        id,
+        row.email,
+        TERMS_VERSION,
+        now,
+        now,
+      );
       user = { id };
     }
+    db.prepare("INSERT INTO login_events (user_id, ip, at) VALUES (?, ?, ?)").run(user.id, req.ip || "", now);
     const session = randomToken();
     db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
       sha256(session),

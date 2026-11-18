@@ -12,6 +12,7 @@ export function claimCode() {
   const s = [...b].map((x) => ALPHABET[x % 32]).join("");
   return `${s.slice(0, 5)}-${s.slice(5)}`;
 }
+export const PERMANENT = 8.64e15; // 영구 정지 표시값
 const normalizeClaim = (c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 export function adminRoutes({ db, cfg }) {
@@ -70,6 +71,62 @@ export function adminRoutes({ db, cfg }) {
       Date.now(),
     );
     res.status(201).json({ id, checkinCode: code });
+  });
+
+  // ---------- 신고 처리 ----------
+  r.get("/api/admin/reports", (req, res) => {
+    const status = ["open", "actioned", "dismissed"].includes(req.query.status) ? req.query.status : "open";
+    const rows = db
+      .prepare(
+        `SELECT r.*, rp.name AS reporter_name, t.name AS target_name, t.suspended_until,
+                (SELECT COUNT(*) FROM reports o WHERE o.target_id = r.target_id AND o.status = 'open') AS open_on_target
+         FROM reports r JOIN users rp ON rp.id = r.reporter_id JOIN users t ON t.id = r.target_id
+         WHERE r.status = ? ORDER BY open_on_target DESC, r.created_at LIMIT 200`,
+      )
+      .all(status);
+    res.json({
+      reports: rows.map((r) => ({
+        id: r.id,
+        reason: r.reason,
+        detail: r.detail,
+        status: r.status,
+        note: r.note,
+        createdAt: r.created_at,
+        reporter: { id: r.reporter_id, name: r.reporter_name },
+        target: { id: r.target_id, name: r.target_name, suspendedUntil: r.suspended_until, openReports: r.open_on_target },
+      })),
+    });
+  });
+
+  r.post("/api/admin/reports/:id/resolve", (req, res) => {
+    const status = req.body?.status;
+    if (!["actioned", "dismissed"].includes(status)) throw bad("invalid_input", "status는 actioned 또는 dismissed");
+    const note = str(req.body?.note, "note", { max: 500 });
+    const t = db.prepare("UPDATE reports SET status = ?, note = ?, resolved_at = ? WHERE id = ?").run(status, note, Date.now(), req.params.id);
+    if (!t.changes) throw notFound();
+    res.json({ ok: true });
+  });
+
+  // ---------- 이용 정지 ----------
+  // days 를 빼면 영구 정지. 정지하면 로그인 상태도 바로 끊는다.
+  r.post("/api/admin/users/:id/suspend", (req, res) => {
+    const u = db.prepare("SELECT id, email FROM users WHERE id = ? AND deleted_at IS NULL").get(req.params.id);
+    if (!u) throw notFound();
+    if (cfg.adminEmails.includes(u.email)) throw forbidden("admin_target", "운영진 계정은 정지할 수 없어요");
+    const days = req.body?.days;
+    const until = days === undefined || days === null ? PERMANENT : Date.now() + int(days, "days", { min: 1, max: 3650 }) * 86400_000;
+    const reason = str(req.body?.reason, "reason", { max: 200, min: 1 });
+    tx(db, () => {
+      db.prepare("UPDATE users SET suspended_until = ?, suspend_reason = ? WHERE id = ?").run(until, reason, u.id);
+      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(u.id);
+    });
+    res.json({ ok: true, suspendedUntil: until, permanent: until === PERMANENT });
+  });
+
+  r.post("/api/admin/users/:id/unsuspend", (req, res) => {
+    const t = db.prepare("UPDATE users SET suspended_until = NULL, suspend_reason = NULL WHERE id = ?").run(req.params.id);
+    if (!t.changes) throw notFound();
+    res.json({ ok: true });
   });
 
   // 고객사에 주는 리포트: 개인별 데이터 없이 통계만

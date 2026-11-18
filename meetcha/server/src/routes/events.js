@@ -40,10 +40,10 @@ export function eventRoutes({ db, limit }) {
         `SELECT u.id, u.name, u.role, u.org, u.hint, a.checked_in_at,
                 (SELECT 1 FROM encounters x WHERE x.scanner_id = ? AND x.owner_id = u.id) AS found
          FROM event_attendees a JOIN users u ON u.id = a.user_id
-         WHERE a.event_id = ? AND u.id != ? AND u.deleted_at IS NULL
+         WHERE a.event_id = ? AND u.id != ? AND u.deleted_at IS NULL AND (u.suspended_until IS NULL OR u.suspended_until <= ?)
          ORDER BY a.checked_in_at`,
       )
-      .all(req.user.id, e.id, req.user.id);
+      .all(req.user.id, e.id, req.user.id, Date.now());
     const slots = rows.map((u, i) =>
       u.found
         ? { slot: i + 1, found: true, user: { id: u.id, name: u.name, role: u.role, org: u.org } }
@@ -62,10 +62,10 @@ export function eventRoutes({ db, limit }) {
         `SELECT u.id, u.name, COUNT(x.owner_id) AS met
          FROM event_attendees a JOIN users u ON u.id = a.user_id
          LEFT JOIN encounters x ON x.scanner_id = u.id AND x.event_id = a.event_id
-         WHERE a.event_id = ? AND a.show_leaderboard = 1 AND u.deleted_at IS NULL
+         WHERE a.event_id = ? AND a.show_leaderboard = 1 AND u.deleted_at IS NULL AND (u.suspended_until IS NULL OR u.suspended_until <= ?)
          GROUP BY u.id ORDER BY met DESC, MIN(a.checked_in_at) LIMIT 20`,
       )
-      .all(e.id);
+      .all(e.id, Date.now());
     res.json({ leaders: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, met: r.met })) });
   });
 

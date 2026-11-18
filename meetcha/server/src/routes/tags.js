@@ -3,7 +3,7 @@
 //   NTAG215 등   : https://도메인/t/<고정 코드>
 import { Router } from "express";
 import { deriveTagKey, randomToken, sha256, verifySun } from "../crypto.js";
-import { PENDING_COOKIE, cookieOptions } from "../lib.js";
+import { PENDING_COOKIE, cookieOptions, isSuspended } from "../lib.js";
 import { recordEncounter } from "../encounters.js";
 import { esc, page } from "../pages.js";
 import { viewProfile } from "./social.js";
@@ -22,6 +22,8 @@ export function tagRoutes({ db, cfg, limit }) {
     if (!tag.owner_id)
       return notice(res, 200, "아직 주인이 없는 키링이에요", "키링 주인이라면 로그인 후 '내 명함'에서 포장에 인쇄된 등록 코드를 입력하세요.");
     const owner = tag.owner_id;
+    const ownerRow = db.prepare("SELECT suspended_until FROM users WHERE id = ?").get(owner);
+    if (isSuspended(ownerRow)) return notice(res, 403, "지금은 열 수 없는 키링이에요", "이 키링의 명함은 현재 볼 수 없어요.");
     // 복사된 링크(카운터 재사용)는 도감에 넣지 않고 프로필만 보여 준다
     if (fresh) {
       if (req.user) {

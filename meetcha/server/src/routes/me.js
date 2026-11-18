@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { sha256 } from "../crypto.js";
 import { tx } from "../db.js";
-import { HttpError, SESSION_COOKIE, bad, httpsUrl, int, notFound, requireUser, str } from "../lib.js";
+import { HttpError, SESSION_COOKIE, TERMS_VERSION, bad, httpsUrl, int, notFound, requireUser, str } from "../lib.js";
 
 export const MAX_LINKS = 8;
 export const MAX_QUESTIONS = 5;
@@ -31,6 +31,9 @@ export function meRoutes({ db, limit }) {
       oneLiner: u.one_liner,
       hint: u.hint,
       visibility: u.visibility,
+      // 약관이 바뀌었으면 화면에서 다시 동의를 받아 POST /api/me/consent 로 보낸다
+      consentRequired: u.terms_version !== TERMS_VERSION,
+      termsVersion: TERMS_VERSION,
       links: loadLinks(db, u.id),
       quiz: loadQuiz(db, u.id), // 본인에게만 정답 포함
       tags: db
@@ -85,6 +88,14 @@ export function meRoutes({ db, limit }) {
       clean.forEach((q, i) => ins.run(req.user.id, i, q.question, JSON.stringify(q.options), q.answer));
     });
     res.json({ ok: true, quiz: clean });
+  });
+
+  r.post("/api/me/consent", (req, res) => {
+    const c = req.body ?? {};
+    if (!(c.age === true && c.terms === true && c.privacy === true))
+      throw bad("consent_required", "만 14세 이상 확인과 이용약관·개인정보 수집 동의가 모두 필요해요");
+    db.prepare("UPDATE users SET terms_version = ?, consented_at = ? WHERE id = ?").run(TERMS_VERSION, Date.now(), req.user.id);
+    res.json({ ok: true, termsVersion: TERMS_VERSION });
   });
 
   // 포장에 인쇄된 등록 코드로 내 키링 연결

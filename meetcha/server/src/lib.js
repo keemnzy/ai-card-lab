@@ -65,6 +65,9 @@ export function createLimiter() {
 
 // ---------- 세션 ----------
 export const SESSION_COOKIE = "mc_session";
+// 약관·개인정보처리방침을 바꾸면 이 값을 올린다. 다른 버전에 동의한 회원은 다시 동의해야 한다.
+export const TERMS_VERSION = "2027-01";
+export const isSuspended = (u, now = Date.now()) => !!u?.suspended_until && u.suspended_until > now;
 export const PENDING_COOKIE = "mc_pending";
 
 export function parseCookies(header = "") {
@@ -90,11 +93,17 @@ export function loadSession(db) {
     req.cookies = parseCookies(req.headers.cookie);
     const t = req.cookies[SESSION_COOKIE];
     req.user = t ? q.get(sha256(t), Date.now()) || null : null;
+    // 정지된 계정은 로그인하지 않은 것처럼 다루고, 로그인이 필요한 API에서는 정지 안내를 준다
+    if (isSuspended(req.user)) {
+      req.suspended = { until: req.user.suspended_until, reason: req.user.suspend_reason };
+      req.user = null;
+    }
     next();
   };
 }
 
 export function requireUser(req, _res, next) {
+  if (req.suspended) return next(new HttpError(403, "account_suspended", "이용이 정지된 계정이에요"));
   if (!req.user) return next(new HttpError(401, "login_required", "로그인이 필요해요"));
   next();
 }

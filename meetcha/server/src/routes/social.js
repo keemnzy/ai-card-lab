@@ -1,7 +1,7 @@
 // 다른 사람 프로필 보기, 도감, 메모, 메시지, 차단.
 import { Router } from "express";
 import { randomId } from "../crypto.js";
-import { forbidden, notFound, requireUser, str } from "../lib.js";
+import { HttpError, forbidden, isSuspended, notFound, requireUser, str } from "../lib.js";
 import { hasScanned, haveMet } from "../encounters.js";
 import { loadLinks } from "./me.js";
 
@@ -17,7 +17,8 @@ export function viewProfile(db, viewerId, ownerId) {
   if (!u) return null;
   const isSelf = viewerId === ownerId;
   const met = viewerId && !isSelf && haveMet(db, viewerId, ownerId);
-  const full = !u.deleted_at && (isSelf || u.visibility === "public" || (u.visibility === "encountered" && met));
+  // 정지된 계정은 다른 사람에게 이름만 보인다 (정지 사실은 알리지 않음)
+  const full = !u.deleted_at && (isSelf || !isSuspended(u)) && (isSelf || u.visibility === "public" || (u.visibility === "encountered" && met));
   const quizCount = db.prepare("SELECT COUNT(*) AS n FROM quiz_questions WHERE user_id = ?").get(ownerId).n;
   const base = { id: u.id, name: u.name || "이름 없음", deleted: !!u.deleted_at, limited: !full };
   if (!full) return base;
@@ -81,8 +82,8 @@ export function socialRoutes({ db, limit }) {
     limit(`msg:${req.user.id}`, 30, 3600_000);
     const body = str(req.body?.body, "body", { max: 500, min: 1 });
     const blocked = db.prepare("SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?").get(to, req.user.id);
-    const recipient = db.prepare("SELECT deleted_at FROM users WHERE id = ?").get(to);
-    if (!blocked && recipient && !recipient.deleted_at)
+    const recipient = db.prepare("SELECT deleted_at, suspended_until FROM users WHERE id = ?").get(to);
+    if (!blocked && recipient && !recipient.deleted_at && !isSuspended(recipient))
       db.prepare("INSERT INTO messages (id, from_id, to_id, body, created_at) VALUES (?, ?, ?, ?, ?)").run(
         randomId(),
         req.user.id,
@@ -105,6 +106,31 @@ export function socialRoutes({ db, limit }) {
     res.json({
       messages: rows.map((m) => ({ id: m.id, body: m.body, createdAt: m.created_at, read: !!m.read_at, from: { id: m.from_id, name: m.from_name } })),
     });
+  });
+
+  // 신고: 만난 사람이거나 전체 공개 명함인 사람만. 같은 사람에 대한 처리 전 신고는 하나로 합친다.
+  const REASONS = ["harassment", "spam", "impersonation", "inappropriate", "other"];
+  r.post("/api/users/:id/report", requireUser, (req, res) => {
+    const target = db.prepare("SELECT id, visibility FROM users WHERE id = ? AND deleted_at IS NULL").get(req.params.id);
+    if (!target) throw notFound();
+    if (target.id === req.user.id) throw forbidden("self", "나를 신고할 수 없어요");
+    if (target.visibility !== "public" && !haveMet(db, req.user.id, target.id))
+      throw forbidden("not_met", "만난 사람이나 전체 공개 명함만 신고할 수 있어요");
+    if (!REASONS.includes(req.body?.reason)) throw new HttpError(400, "invalid_input", `reason은 ${REASONS.join(", ")} 중 하나예요`);
+    limit(`report:${req.user.id}`, 10, 86400_000);
+    const detail = str(req.body?.detail, "detail", { max: 1000 });
+    const open = db.prepare("SELECT id FROM reports WHERE reporter_id = ? AND target_id = ? AND status = 'open'").get(req.user.id, target.id);
+    if (open) db.prepare("UPDATE reports SET reason = ?, detail = ? WHERE id = ?").run(req.body.reason, detail, open.id);
+    else
+      db.prepare("INSERT INTO reports (id, reporter_id, target_id, reason, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(
+        randomId(),
+        req.user.id,
+        target.id,
+        req.body.reason,
+        detail,
+        Date.now(),
+      );
+    res.status(201).json({ ok: true });
   });
 
   r.post("/api/users/:id/block", requireUser, (req, res) => {

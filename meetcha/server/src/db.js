@@ -14,8 +14,32 @@ CREATE TABLE IF NOT EXISTS users (
   one_liner    TEXT NOT NULL DEFAULT '',
   hint         TEXT NOT NULL DEFAULT '',    -- 이벤트 보드에서 가려진 카드에 보일 힌트 (본인이 직접 입력)
   visibility   TEXT NOT NULL DEFAULT 'encountered' CHECK (visibility IN ('public','encountered','private')),
+  terms_version   TEXT,                     -- 동의한 약관·처리방침 버전
+  consented_at    INTEGER,                  -- 만 14세 이상 확인 + 약관·처리방침 동의 시각
+  suspended_until INTEGER,                  -- 이용 정지 종료 시각 (영구 정지는 아주 큰 값)
+  suspend_reason  TEXT,
   created_at   INTEGER NOT NULL,
   deleted_at   INTEGER
+);
+
+-- 접속 기록: 통신비밀보호법에 따라 3개월 보관 후 자동 삭제. 탈퇴해도 보관 기간 동안은 남는다.
+CREATE TABLE IF NOT EXISTS login_events (
+  user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ip       TEXT NOT NULL,
+  at       INTEGER NOT NULL
+);
+
+-- 신고: 부정 이용 대응을 위해 접수 후 1년 보관
+CREATE TABLE IF NOT EXISTS reports (
+  id           TEXT PRIMARY KEY,
+  reporter_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason       TEXT NOT NULL CHECK (reason IN ('harassment','spam','impersonation','inappropriate','other')),
+  detail       TEXT NOT NULL DEFAULT '',
+  status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','actioned','dismissed')),
+  note         TEXT NOT NULL DEFAULT '',     -- 운영진 처리 메모
+  created_at   INTEGER NOT NULL,
+  resolved_at  INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS links (
@@ -139,6 +163,8 @@ CREATE TABLE IF NOT EXISTS event_attendees (
 CREATE INDEX IF NOT EXISTS idx_enc_owner ON encounters(owner_id);
 CREATE INDEX IF NOT EXISTS idx_msg_to ON messages(to_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_login_at ON login_events(at);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 `;
 
 export function openDb(path = ":memory:") {
@@ -158,4 +184,18 @@ export function tx(db, fn) {
     db.exec("ROLLBACK");
     throw e;
   }
+}
+
+export const RETENTION = {
+  loginEvents: 90 * 86400_000, // 3개월
+  reports: 365 * 86400_000, // 1년
+};
+
+/** 보관 기간이 지난 데이터 삭제. 서버가 1시간마다 실행한다. */
+export function purgeExpired(db, now = Date.now()) {
+  db.prepare("DELETE FROM login_tokens WHERE expires_at < ?").run(now - 86400_000);
+  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM pending_scans WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM login_events WHERE at < ?").run(now - RETENTION.loginEvents);
+  db.prepare("DELETE FROM reports WHERE created_at < ?").run(now - RETENTION.reports);
 }

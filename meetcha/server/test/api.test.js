@@ -5,12 +5,14 @@ import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { openDb } from "../src/db.js";
 import { deriveTagKey, encodeSun } from "../src/crypto.js";
-import { createLimiter } from "../src/lib.js";
+import { TERMS_VERSION, createLimiter } from "../src/lib.js";
+import { RETENTION, purgeExpired } from "../src/db.js";
 
 const META = "00112233445566778899aabbccddeeff";
 const MASTER = "ffeeddccbbaa99887766554433221100";
 let server, base, db, cfg, clock;
 const sent = [];
+const CONSENT = { age: true, terms: true, privacy: true };
 
 before(async () => {
   db = openDb(":memory:");
@@ -50,7 +52,7 @@ async function login(c, email) {
   const r = await c.post("/api/auth/request", { email });
   assert.equal(r.status, 200);
   const token = new URL(sent.at(-1).link).searchParams.get("token");
-  const v = await c.post("/api/auth/verify", { token });
+  const v = await c.post("/api/auth/verify", { token, consent: CONSENT });
   assert.equal(v.status, 200, JSON.stringify(v.body));
   return v.body;
 }
@@ -67,9 +69,9 @@ test("로그인: 링크는 한 번만 쓸 수 있고, 로그아웃하면 세션�
   await c.post("/api/auth/request", { email: "Once@Test.com" });
   const token = new URL(sent.at(-1).link).searchParams.get("token");
   assert.equal(sent.at(-1).to, "once@test.com");
-  assert.equal((await c.post("/api/auth/verify", { token })).status, 200);
+  assert.equal((await c.post("/api/auth/verify", { token, consent: CONSENT })).status, 200);
   assert.equal((await c.get("/api/me")).status, 200);
-  assert.equal((await client().post("/api/auth/verify", { token })).body.error, "invalid_token");
+  assert.equal((await client().post("/api/auth/verify", { token, consent: CONSENT })).body.error, "invalid_token");
   await c.post("/api/auth/logout");
   assert.equal((await c.get("/api/me")).status, 401);
 });
@@ -233,7 +235,7 @@ test("이벤트: 체크인 → 가려진 보드 → 태그하면 공개 → 리�
   assert.equal(board.total, 2);
   assert.equal(board.found, 0);
   assert.deepEqual(board.slots.map((s) => s.hint), ["디자인", "투자"]);
-  assert.ok(!JSON.stringify(board).includes("E2"), "못 만난 사람 이름은 숨김");
+  assert.ok(board.slots.every((s) => !s.user && !s.name), "못 만난 사람 이름은 숨김");
 
   const path = await issueStaticTag(admin, p2.c);
   await p1.c.get(path);
@@ -246,7 +248,7 @@ test("이벤트: 체크인 → 가려진 보드 → 태그하면 공개 → 리�
 
   const rep = (await admin.get(`/api/admin/events/${ev.body.id}/report`)).body;
   assert.deepEqual([rep.attendees, rep.encounters], [3, 1]);
-  assert.ok(!JSON.stringify(rep).includes("E1"), "리포트에 개인 정보 없음");
+  assert.ok(!/"name":"E\d"|e\d@test\.com/.test(JSON.stringify(rep)), "리포트에 개인 정보 없음");
 });
 
 test("탈퇴: 개인정보 삭제, 상대 도감에는 '탈퇴한 사용자'로 남음", async () => {
@@ -272,4 +274,93 @@ test("레이트 리밋: 한도를 넘으면 429", () => {
   for (let i = 0; i < 5; i++) limit("k", 5, 60_000);
   assert.throws(() => limit("k", 5, 60_000), (e) => e.status === 429);
   limit("other", 5, 60_000); // 다른 키는 영향 없음
+});
+
+test("가입 동의: 새 회원은 동의가 있어야 가입되고, 동의 전에는 링크가 소모되지 않는다", async () => {
+  const c = client();
+  await c.post("/api/auth/request", { email: "consent@test.com" });
+  const token = new URL(sent.at(-1).link).searchParams.get("token");
+  const r1 = await c.post("/api/auth/verify", { token });
+  assert.equal(r1.body.error, "consent_required");
+  const r2 = await c.post("/api/auth/verify", { token, consent: { age: false, terms: true, privacy: true } });
+  assert.equal(r2.body.error, "consent_required");
+  const r3 = await c.post("/api/auth/verify", { token, consent: CONSENT }); // 같은 링크로 다시 시도 가능
+  assert.equal(r3.status, 200);
+  const me = (await c.get("/api/me")).body;
+  assert.deepEqual([me.consentRequired, me.termsVersion], [false, TERMS_VERSION]);
+  const row = db.prepare("SELECT terms_version, consented_at FROM users WHERE email = 'consent@test.com'").get();
+  assert.equal(row.terms_version, TERMS_VERSION);
+  assert.ok(row.consented_at > 0);
+  // 기존 회원은 다시 로그인할 때 동의를 묻지 않는다
+  await c.post("/api/auth/request", { email: "consent@test.com" });
+  const t2 = new URL(sent.at(-1).link).searchParams.get("token");
+  assert.equal((await client().post("/api/auth/verify", { token: t2 })).status, 200);
+  // 약관 버전이 바뀐 회원은 consentRequired → 다시 동의
+  db.prepare("UPDATE users SET terms_version = 'old' WHERE email = 'consent@test.com'").run();
+  assert.equal((await c.get("/api/me")).body.consentRequired, true);
+  assert.equal((await c.post("/api/me/consent", CONSENT)).status, 200);
+  assert.equal((await c.get("/api/me")).body.consentRequired, false);
+});
+
+test("접속 기록: 로그인할 때 남고 3개월 지나면 삭제", async () => {
+  const { id } = await newUser("logs@test.com");
+  const n = () => db.prepare("SELECT COUNT(*) AS n FROM login_events WHERE user_id = ?").get(id).n;
+  assert.equal(n(), 1);
+  purgeExpired(db, Date.now() + RETENTION.loginEvents - 60_000);
+  assert.equal(n(), 1);
+  purgeExpired(db, Date.now() + RETENTION.loginEvents + 60_000);
+  assert.equal(n(), 0);
+});
+
+test("약관 원문 제공 (한국어·영문)", async () => {
+  const ko = await fetch(base + "/legal/privacy");
+  assert.equal(ko.status, 200);
+  assert.match(await ko.text(), /개인정보처리방침/);
+  const en = await fetch(base + "/legal/terms?lang=en");
+  assert.match(await en.text(), /Terms of Service/);
+  assert.equal((await fetch(base + "/legal/../package.json")).status, 404);
+});
+
+test("신고 → 운영진 확인 → 이용 정지 → 정지 해제", async () => {
+  const admin = client();
+  await login(admin, "admin@bs.kr");
+  const bad = await newUser("troll@test.com", { name: "Troll", hint: "트롤" });
+  const victim = await newUser("victim@test.com");
+  const stranger = await newUser("stranger@test.com");
+  const path = await issueStaticTag(admin, bad.c);
+  await victim.c.get(path);
+
+  // 만난 적 없는 사람은 (전체 공개가 아니면) 신고 불가
+  assert.equal((await stranger.c.post(`/api/users/${bad.id}/report`, { reason: "spam" })).status, 403);
+  assert.equal((await victim.c.post(`/api/users/${bad.id}/report`, { reason: "nope" })).status, 400);
+  assert.equal((await victim.c.post(`/api/users/${bad.id}/report`, { reason: "harassment", detail: "계속 메시지" })).status, 201);
+  assert.equal((await victim.c.post(`/api/users/${bad.id}/report`, { reason: "harassment", detail: "추가 내용" })).status, 201);
+  assert.equal((await victim.c.get("/api/admin/reports")).status, 403);
+
+  const list = (await admin.get("/api/admin/reports")).body.reports.filter((r) => r.target.id === bad.id);
+  assert.equal(list.length, 1, "처리 전 같은 신고는 하나로 합침");
+  assert.equal(list[0].detail, "추가 내용");
+
+  // 정지: 세션이 끊기고, 로그인도 못 하고, 명함·키링이 닫힌다
+  const sus = await admin.post(`/api/admin/users/${bad.id}/suspend`, { days: 7, reason: "괴롭힘 신고" });
+  assert.equal(sus.status, 200);
+  assert.equal((await bad.c.get("/api/me")).status, 401); // 세션이 바로 끊김
+  await bad.c.post("/api/auth/request", { email: "troll@test.com" });
+  const t = new URL(sent.at(-1).link).searchParams.get("token");
+  assert.equal((await bad.c.post("/api/auth/verify", { token: t })).body.error, "account_suspended");
+  assert.equal((await victim.c.get(`/api/users/${bad.id}`)).body.limited, true);
+  assert.equal((await stranger.c.get(path)).status, 403);
+  assert.equal((await victim.c.post(`/api/users/${bad.id}/messages`, { body: "?" })).status, 201);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM messages WHERE to_id = ?").get(bad.id).n, 0);
+  assert.equal((await admin.post(`/api/admin/users/${(await admin.get("/api/me")).body.id}/suspend`, { reason: "x" })).status, 403);
+
+  assert.equal((await admin.post(`/api/admin/reports/${list[0].id}/resolve`, { status: "actioned", note: "7일 정지" })).status, 200);
+  assert.equal((await admin.get("/api/admin/reports?status=actioned")).body.reports.some((r) => r.id === list[0].id), true);
+
+  // 해제하면 다시 로그인 가능
+  await admin.post(`/api/admin/users/${bad.id}/unsuspend`);
+  await bad.c.post("/api/auth/request", { email: "troll@test.com" });
+  const t2 = new URL(sent.at(-1).link).searchParams.get("token");
+  assert.equal((await bad.c.post("/api/auth/verify", { token: t2 })).status, 200);
+  assert.equal((await victim.c.get(`/api/users/${bad.id}`)).body.limited, false);
 });

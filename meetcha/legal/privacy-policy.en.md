@@ -36,7 +36,10 @@ This policy explains how [Company legal name] ("**we**", "**us**") handles perso
 | Quiz activity | Quiz attempts and scores | Showing scores and best results | Created as you use the Service |
 | Notes and messages | Notes you write, messages you send and receive, people you block | Private notes, messaging, blocking | When you use them |
 | Events | Check-in time, whether you chose to appear on the leaderboard | Event mode (discovery board, leaderboard) | When you join an event |
-| Technical | Sign-in cookie, IP address, request times | Keeping you signed in, blocking abuse and excessive requests, security | Automatic |
+| Consent record | Which version of the Terms and Privacy Policy you accepted, and when | Proof of age confirmation and consent | Created when you sign up |
+| Reports | Who reported whom, the reason, details you provide, and the outcome | Handling harassment, impersonation and other abuse | When someone files a report |
+| Account restrictions | Suspension period and reason | Enforcing the Terms | If we restrict an account |
+| Technical | Sign-in cookie, IP address, request times, sign-in history | Keeping you signed in, blocking abuse and excessive requests, security | Automatic |
 
 We do **not** collect phone numbers, postal addresses, government IDs, payment details, precise location, or any "sensitive" information as defined by the GDPR or the CCPA.
 
@@ -50,7 +53,7 @@ We do **not** collect phone numbers, postal addresses, government IDs, payment d
 |---|---|
 | Running your account, card, collection, quiz, notes and messages | Performance of our contract with you (Art. 6(1)(b)) |
 | Showing your name on an event leaderboard | Your consent (Art. 6(1)(a)), which you can withdraw at any time |
-| Blocking abuse, rate limiting, detecting cloned key rings, security logs | Our legitimate interest in keeping the Service safe (Art. 6(1)(f)) |
+| Blocking abuse, rate limiting, detecting cloned key rings, security logs, handling reports and suspensions | Our legitimate interest in keeping the Service safe (Art. 6(1)(f)) |
 | Keeping records the law requires | Legal obligation (Art. 6(1)(c)) |
 
 We don't make decisions about you based solely on automated processing that have legal or similarly significant effects.
@@ -91,10 +94,11 @@ We keep your information until you delete your account, with these shorter limit
 | A tap made before signing in | 30 minutes, unless you sign in within that time |
 | IP addresses used for rate limiting | Held in memory only, for up to 1 hour; never written to storage |
 | Event hint visibility | Only while the event is running |
-| Access logs | 3 months, where the law requires |
+| Sign-in history (IP address, time) | 3 months, then deleted automatically, even if you delete your account sooner |
+| Reports | 1 year after the report is filed, then deleted automatically, even if either person deletes their account, to prevent repeat abuse |
 | Backups | Overwritten within [30] days |
 
-**When you delete your account**, we immediately delete your email address, profile details, links, quiz, your collection, notes you wrote, notes others wrote about you, messages you sent and received, blocks, quiz history, event records and sessions. Your key ring is unlinked and deactivated. People who met you keep a record that they met someone, shown only as "Deleted user", with no name or other details that identify you.
+**When you delete your account**, apart from sign-in history and reports, which we keep for the periods above, we immediately delete your email address, profile details, links, quiz, your collection, notes you wrote, notes others wrote about you, messages you sent and received, blocks, quiz history, event records and sessions. Your key ring is unlinked and deactivated. People who met you keep a record that they met someone, shown only as "Deleted user", with no name or other details that identify you.
 
 ## 7. Your rights
 
