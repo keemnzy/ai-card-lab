@@ -1,0 +1,332 @@
+<title>Meetcha 프로토타입</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one phone-width column, app-like; a tab bar switches 이벤트 / 도감 / 내 명함. Quiz uses four colored answer tiles. */
+:root {
+  --bg: #eef0f7;
+  --surface: #ffffff;
+  --surface-2: #e2e5f1;
+  --fg: #161a2e;
+  --muted: #5d6280;
+  --line: #cfd3e4;
+  --accent: #4b3cf0;        /* key-ring ink violet */
+  --accent-fg: #ffffff;
+  --a1: #e5484d; --a2: #1e88c7; --a3: #d99a06; --a4: #2f9e5b;  /* answer tiles */
+  --fog: #2a2f4d;
+  --fog-fg: #aab0d6;
+  --good: #2f9e5b; --bad: #e5484d;
+  --f-display: "Do Hyeon", "Noto Sans KR", system-ui, sans-serif;
+  --f-body: "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1120; --surface: #191c33; --surface-2: #232745; --fg: #eceefb; --muted: #9ba0c3; --line: #2e3358;
+  --accent: #7b6dff; --accent-fg: #0f1120; --fog: #0a0c18; --fog-fg: #6f76a8; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0f1120; --surface: #191c33; --surface-2: #232745; --fg: #eceefb; --muted: #9ba0c3; --line: #2e3358;
+  --accent: #7b6dff; --accent-fg: #0f1120; --fog: #0a0c18; --fog-fg: #6f76a8; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); line-height: 1.55; }
+.app { max-width: 460px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 96px; display: flex; flex-direction: column; gap: 16px; }
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.logo { font-family: var(--f-display); font-size: 28px; letter-spacing: .5px; }
+.logo b { color: var(--accent); font-weight: 400; }
+.event-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+h2 { font-family: var(--f-display); font-weight: 400; font-size: 24px; margin: 0; text-wrap: balance; }
+h3 { font-size: 15px; margin: 0; }
+.muted { color: var(--muted); font-size: 13px; }
+.label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+button { font: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn { border: 0; border-radius: 10px; padding: 12px 16px; font-weight: 700; background: var(--accent); color: var(--accent-fg); }
+.btn.ghost { background: var(--surface-2); color: var(--fg); }
+.btn.small { padding: 6px 10px; font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* progress */
+.meter { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter > i { display: block; height: 100%; background: var(--accent); transition: width .5s; }
+
+/* discovery board */
+.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.slot { aspect-ratio: 3 / 4; max-width: 100%; border-radius: 12px; border: 0; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; background: var(--fog); color: var(--fog-fg); position: relative; overflow: hidden; }
+.slot .sil { font-family: var(--f-display); font-size: 40px; line-height: 1; margin-top: 10px; }
+.slot .hint { font-size: 11px; line-height: 1.3; }
+.slot.found { background: var(--surface); color: var(--fg); border: 1px solid var(--line); }
+.slot.found .sil { color: var(--accent); }
+.slot .no { position: absolute; top: 6px; left: 8px; font-size: 10px; }
+.avatar { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-family: var(--f-display); font-size: 26px; color: #fff; flex: none; }
+
+/* profile */
+.profile-head { display: flex; gap: 14px; align-items: center; }
+.profile-head > div { min-width: 0; }
+.links { display: flex; gap: 8px; flex-wrap: wrap; }
+.links a { font-size: 13px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); color: var(--fg); text-decoration: none; }
+.oneliner { font-size: 15px; padding: 12px; border-radius: 10px; background: var(--surface-2); }
+textarea, input, select { width: 100%; font: inherit; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+textarea { min-height: 70px; resize: vertical; }
+.note { font-size: 13px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; }
+
+/* quiz */
+#quiz { display: flex; flex-direction: column; gap: 16px; }
+.q-top { display: flex; justify-content: space-between; align-items: baseline; }
+.q-text { font-family: var(--f-display); font-size: 26px; line-height: 1.3; text-align: center; padding: 18px 4px; text-wrap: balance; }
+.timer { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.timer > i { display: block; height: 100%; width: 100%; background: var(--a3); transform-origin: left; }
+.answers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ans { border: 0; border-radius: 12px; min-height: 92px; padding: 12px; color: #fff; font-weight: 700; font-size: 15px; display: flex; gap: 8px; align-items: center; text-align: left; transition: opacity .2s, transform .1s; }
+.ans:active { transform: scale(.97); }
+.ans .shape { font-size: 18px; flex: none; }
+.ans:nth-child(1) { background: var(--a1); } .ans:nth-child(2) { background: var(--a2); }
+.ans:nth-child(3) { background: var(--a3); } .ans:nth-child(4) { background: var(--a4); }
+.ans.dim { opacity: .3; } .ans.right { outline: 4px solid var(--fg); }
+.score { font-family: var(--f-display); font-size: 56px; text-align: center; color: var(--accent); line-height: 1; }
+
+/* tag animation overlay */
+.overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 88%, transparent); display: grid; place-items: center; z-index: 20; padding: 24px; }
+.ring { width: 140px; height: 140px; border-radius: 50%; border: 6px solid var(--accent); display: grid; place-items: center; font-family: var(--f-display); font-size: 22px; animation: pulse 1s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 100% { box-shadow: 0 0 0 36px transparent; } }
+.reveal { text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; animation: pop .45s cubic-bezier(.2,1.6,.4,1); }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ring, .reveal, .meter > i { animation: none; transition: none; } }
+
+/* tab bar */
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center; gap: 4px; padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); z-index: 10; }
+nav.tabs button { flex: 1; max-width: 150px; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 10px; font-weight: 700; font-size: 14px; }
+nav.tabs button[aria-current="true"] { color: var(--accent); background: var(--surface-2); }
+.list-item { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); text-align: left; width: 100%; color: var(--fg); }
+.list-item > div { min-width: 0; flex: 1; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.badge.ok { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
+.demo-note { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 10px; }
+.qedit { display: grid; gap: 6px; }
+</style>
+
+<div class="app" id="app"></div>
+<nav class="tabs" id="tabs">
+  <button data-tab="event">이벤트</button>
+  <button data-tab="dex">내 도감</button>
+  <button data-tab="me">내 명함</button>
+</nav>
+<div class="overlay" id="overlay" hidden></div>
+
+<script>
+// ---------- sample data (예시 데이터) ----------
+const EVENT = { id: "gscc-2026-net", name: "GSCC 네트워킹 나이트", total: 9 };
+const COLORS = ["#e5484d","#1e88c7","#d99a06","#2f9e5b","#7b6dff","#d6409f","#12a594","#f76b15","#3e63dd"];
+const PEOPLE = [
+  { id:"p1", tag:"BS-04A1", name:"김하늘", role:"Product Manager", org:"블레스드스피릿", hint:"기획 · 마포구", one:"사용자 인터뷰 300번 해본 PM입니다. 커피는 무조건 디카페인.",
+    links:[["LinkedIn","https://www.linkedin.com/"],["Instagram","https://www.instagram.com/"]],
+    quiz:[{q:"하늘님이 해본 사용자 인터뷰 횟수는?",o:["30번","100번","300번","1000번"],a:2},{q:"하늘님이 마시는 커피는?",o:["아메리카노","디카페인","라떼","커피 안 마심"],a:1}] },
+  { id:"p2", tag:"BS-1F92", name:"이준호", role:"Backend Engineer", org:"스타트업 A", hint:"개발 · 클라이언트사", one:"주말엔 클라이밍, 평일엔 Postgres 튜닝.",
+    links:[["GitHub","https://github.com/"],["LinkedIn","https://www.linkedin.com/"]],
+    quiz:[{q:"준호님의 주말 취미는?",o:["러닝","클라이밍","서핑","보드게임"],a:1},{q:"준호님이 튜닝하는 DB는?",o:["MySQL","MongoDB","Postgres","Redis"],a:2}] },
+  { id:"p3", tag:"BS-77C0", name:"박서연", role:"Brand Designer", org:"GSCC 운영진", hint:"디자인 · 운영진", one:"이 키링 3D 모델링한 사람이 바로 저예요.",
+    links:[["Behance","https://www.behance.net/"],["Instagram","https://www.instagram.com/"]],
+    quiz:[{q:"서연님이 오늘 행사에서 만든 것은?",o:["포스터","키링 3D 모델","웹사이트","명찰"],a:1}] },
+  { id:"p4", tag:"BS-2B3D", name:"최민재", role:"VC Associate", org:"투자사 B", hint:"투자 · 시드 단계", one:"시드 라운드 위주로 봅니다. 펀팩트: 마라톤 풀코스 3회.",
+    links:[["LinkedIn","https://www.linkedin.com/"]],
+    quiz:[{q:"민재님이 주로 보는 단계는?",o:["시드","시리즈 A","시리즈 B","Pre-IPO"],a:0},{q:"마라톤 풀코스 완주 횟수는?",o:["0회","1회","3회","10회"],a:2}] },
+  { id:"p5", tag:"BS-9E10", name:"정유나", role:"Growth Marketer", org:"커머스 C", hint:"마케팅 · 커머스", one:"CAC 반으로 줄인 썰 풀 수 있어요.", links:[["LinkedIn","https://www.linkedin.com/"]],
+    quiz:[{q:"유나님이 줄인 지표는?",o:["DAU","CAC","LTV","NPS"],a:1}] },
+  { id:"p6", tag:"BS-5D44", name:"한도윤", role:"Data Scientist", org:"핀테크 D", hint:"데이터 · 핀테크", one:"이상거래 탐지 모델 만들어요. 고양이 두 마리 집사.", links:[["GitHub","https://github.com/"]],
+    quiz:[{q:"도윤님이 키우는 반려동물은?",o:["강아지 1마리","고양이 2마리","앵무새","없음"],a:1}] },
+  { id:"p7", tag:"BS-AA08", name:"오지민", role:"Founder", org:"에듀테크 E", hint:"창업 · 에듀테크", one:"코딩 교육 앱 만드는 중. 공동창업자 찾고 있어요!", links:[["LinkedIn","https://www.linkedin.com/"]],
+    quiz:[{q:"지민님이 지금 찾고 있는 사람은?",o:["투자자","공동창업자","디자이너","인턴"],a:1}] },
+  { id:"p8", tag:"BS-3C71", name:"윤태경", role:"Sales Lead", org:"SaaS F", hint:"세일즈 · B2B", one:"B2B 세일즈 10년차. 노래방 18번은 '거위의 꿈'.", links:[["LinkedIn","https://www.linkedin.com/"]],
+    quiz:[{q:"태경님의 노래방 18번은?",o:["거위의 꿈","좋은 날","밤양갱","Hype Boy"],a:0}] },
+];
+const ME_DEFAULT = { name:"김민지", role:"Co-founder", org:"블레스드스피릿", one:"NFC 키링으로 네트워킹을 게임으로 만드는 중!",
+  links:[["LinkedIn","https://www.linkedin.com/"],["Instagram","https://www.instagram.com/"]],
+  quiz:[{q:"민지님 팀이 만드는 굿즈는?",o:["NFC 키링","티셔츠","에코백","스티커"],a:0}] };
+
+// ---------- state (per-browser, prototype only) ----------
+const KEY = "meetcha-proto-v1";
+function load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }
+const S = load() || { found: { p3: Date.now() - 3600e3, p1: Date.now() - 1800e3 }, notes: { p1: "다음 주 커피챗 하기로 함" }, msgs: {}, best: { p1: 1840 }, me: ME_DEFAULT };
+let tab = "event", view = null; // view: {type:'profile'|'quiz', id}
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const person = id => PEOPLE.find(p => p.id === id);
+const color = id => COLORS[(PEOPLE.findIndex(p => p.id === id) + 9) % 9];
+const avatar = (p, size = 56) => `<div class="avatar" style="background:${color(p.id)};width:${size}px;height:${size}px;font-size:${size/2.2}px">${esc(p.name[0])}</div>`;
+const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.round(m/60)}시간 전`; };
+
+function render() {
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-current", String(b.dataset.tab === tab && !view)));
+  const app = $("#app");
+  const head = `<header class="top"><div class="logo">Meet<b>cha</b></div><span class="event-chip">${esc(EVENT.name)}</span></header>`;
+  if (view?.type === "profile") return app.innerHTML = head + profileView(person(view.id));
+  if (view?.type === "quiz") return app.innerHTML = head + `<div id="quiz"></div>`, startQuiz(view.id);
+  app.innerHTML = head + ({ event: eventView, dex: dexView, me: meView })[tab]();
+}
+
+// ---------- 이벤트: 발견 보드 ----------
+function eventView() {
+  const n = Object.keys(S.found).length;
+  const slots = PEOPLE.map((p, i) => S.found[p.id]
+    ? `<button class="slot found" data-open="${p.id}"><span class="no mono">#${String(i+1).padStart(2,"0")}</span>${avatar(p, 48)}<span class="hint"><b>${esc(p.name)}</b><br>${esc(p.role)}</span></button>`
+    : `<button class="slot" data-tag="${p.id}" aria-label="미발견 참가자 ${i+1}, 태그해서 열기"><span class="no mono">#${String(i+1).padStart(2,"0")}</span><span class="sil">?</span><span class="hint">${esc(p.hint)}</span></button>`).join("");
+  return `
+  <section class="panel">
+    <div class="row" style="justify-content:space-between"><h2>오늘 만날 사람들</h2><span class="mono">${n} / ${PEOPLE.length}</span></div>
+    <div class="meter"><i style="width:${n / PEOPLE.length * 100}%"></i></div>
+    <p class="muted" style="margin:0">아직 못 만난 사람은 가려져 있어요. 키링을 서로 태그하면 카드가 열립니다. ${n === PEOPLE.length ? "<b>전원 발견 완료!</b>" : `${PEOPLE.length - n}명 남았어요.`}</p>
+  </section>
+  <div class="board">${slots}</div>
+  <p class="demo-note">데모: 실제로는 상대방 키링에 폰을 대면 열려요. 여기서는 가려진 카드를 누르면 NFC 태그를 흉내 냅니다.</p>`;
+}
+
+// ---------- 도감: 만난 사람 다시 보기 ----------
+function dexView() {
+  const ids = Object.keys(S.found).sort((a, b) => S.found[b] - S.found[a]);
+  if (!ids.length) return `<section class="panel"><h2>아직 도감이 비어 있어요</h2><p class="muted">이벤트 탭에서 첫 번째 사람을 태그해 보세요.</p></section>`;
+  return `<section class="row" style="justify-content:space-between"><h2>내 도감</h2><span class="muted">퀴즈로 다시 기억하기</span></section>` +
+    ids.map(id => { const p = person(id); const best = S.best[id];
+      return `<button class="list-item" data-open="${id}">${avatar(p, 44)}<div><h3>${esc(p.name)} <span class="muted">· ${esc(p.org)}</span></h3><div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.one)}</div></div>
+      <div style="flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px">${best ? `<span class="badge ok mono">${best}점</span>` : `<span class="badge">퀴즈 미완료</span>`}<span class="muted" style="font-size:11px">${ago(S.found[id])}</span></div></button>`; }).join("");
+}
+
+// ---------- 프로필 ----------
+function profileView(p) {
+  const msgs = S.msgs[p.id] || [];
+  return `
+  <button class="btn ghost small" data-back style="align-self:flex-start">← 돌아가기</button>
+  <section class="panel">
+    <div class="profile-head">${avatar(p, 64)}<div><h2>${esc(p.name)}</h2><div class="muted">${esc(p.role)} · ${esc(p.org)}</div></div></div>
+    <div class="oneliner">${esc(p.one)}</div>
+    <div class="links">${p.links.map(([l, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(l)} ↗</a>`).join("")}</div>
+    <div class="muted mono" style="font-size:11px">태그 ${esc(p.tag)} · ${ago(S.found[p.id])} 만남</div>
+  </section>
+  <section class="panel">
+    <div class="row" style="justify-content:space-between"><h3>이 사람, 기억나나요?</h3>${S.best[p.id] ? `<span class="badge ok mono">최고 ${S.best[p.id]}점</span>` : ""}</div>
+    <p class="muted" style="margin:0">${esc(p.name)}님이 직접 낸 퀴즈 ${p.quiz.length}문제. 빨리 맞힐수록 점수가 높아요.</p>
+    <button class="btn" data-quiz="${p.id}">퀴즈 풀기</button>
+  </section>
+  <section class="panel">
+    <label class="label" for="memo">나만 보는 메모</label>
+    <textarea id="memo" placeholder="어떤 얘기를 나눴는지 적어 두세요">${esc(S.notes[p.id] || "")}</textarea>
+    <label class="label" for="msg">${esc(p.name)}님에게 메시지 남기기</label>
+    <textarea id="msg" placeholder="오늘 반가웠어요! 다음에 커피 한잔해요"></textarea>
+    <button class="btn ghost" data-send="${p.id}">메시지 보내기</button>
+    ${msgs.map(m => `<div class="note">${esc(m.t)} <span class="muted">· ${ago(m.at)}</span></div>`).join("")}
+  </section>`;
+}
+
+// ---------- 퀴즈 ----------
+let QZ = null;
+const SHAPES = ["▲","◆","●","■"], LIMIT = 10;
+function startQuiz(id) { QZ = { id, i: 0, score: 0, right: 0 }; askQ(); }
+function askQ() {
+  const p = person(QZ.id), q = p.quiz[QZ.i], box = $("#quiz");
+  box.innerHTML = `
+  <section class="panel">
+    <div class="q-top"><span class="label">${esc(p.name)}님 퀴즈</span><span class="mono">${QZ.i + 1} / ${p.quiz.length} · ${QZ.score}점</span></div>
+    <div class="timer"><i id="bar"></i></div>
+    <div class="q-text">${esc(q.q)}</div>
+  </section>
+  <div class="answers">${q.o.map((o, k) => `<button class="ans" data-ans="${k}"><span class="shape">${SHAPES[k]}</span>${esc(o)}</button>`).join("")}</div>
+  <p id="fb" class="muted" style="text-align:center;min-height:1.5em"></p>`;
+  QZ.t0 = performance.now(); QZ.locked = false;
+  const bar = $("#bar");
+  (function tick() { if (!QZ || QZ.locked || !document.contains(bar)) return;
+    const left = Math.max(0, 1 - (performance.now() - QZ.t0) / (LIMIT * 1000)); bar.style.transform = `scaleX(${left})`;
+    left <= 0 ? answer(-1) : requestAnimationFrame(tick); })();
+}
+function answer(k) {
+  if (QZ.locked) return; QZ.locked = true;
+  const q = person(QZ.id).quiz[QZ.i], ok = k === q.a;
+  const secs = (performance.now() - QZ.t0) / 1000;
+  const pts = ok ? Math.round(1000 * (1 - secs / LIMIT / 2)) : 0; // Kahoot식 속도 가중 점수
+  QZ.score += pts; if (ok) QZ.right++;
+  document.querySelectorAll(".ans").forEach((b, i) => b.classList.add(i === q.a ? "right" : "dim"));
+  $("#fb").innerHTML = k < 0 ? "시간 초과!" : ok ? `<b style="color:var(--good)">정답! +${pts}점</b>` : `<b style="color:var(--bad)">아쉬워요</b>`;
+  setTimeout(() => { QZ.i++; QZ.i < person(QZ.id).quiz.length ? askQ() : endQuiz(); }, 1300);
+}
+function endQuiz() {
+  const p = person(QZ.id), total = p.quiz.length;
+  S.best[p.id] = Math.max(S.best[p.id] || 0, QZ.score); save();
+  $("#quiz").innerHTML = `<section class="panel" style="text-align:center;align-items:center">
+    ${avatar(p, 72)}<div class="label">${esc(p.name)}님을 얼마나 기억하나요</div>
+    <div class="score mono">${QZ.score}</div><div class="muted">${total}문제 중 ${QZ.right}개 정답</div>
+    <div class="row" style="justify-content:center"><button class="btn" data-quiz="${p.id}">다시 풀기</button><button class="btn ghost" data-open="${p.id}">프로필로</button></div></section>`;
+  QZ = null;
+}
+
+// ---------- 내 명함 ----------
+function meView() {
+  const m = S.me;
+  return `
+  <section class="panel">
+    <div class="row" style="justify-content:space-between"><h2>내 명함</h2><span class="badge mono">키링 BS-0001</span></div>
+    <label class="label" for="me-name">이름</label><input id="me-name" value="${esc(m.name)}">
+    <label class="label" for="me-role">직함 · 소속</label>
+    <div class="row" style="flex-wrap:nowrap"><input id="me-role" value="${esc(m.role)}"><input id="me-org" value="${esc(m.org)}" aria-label="소속"></div>
+    <label class="label" for="me-one">한 줄 소개 · 펀팩트</label><textarea id="me-one">${esc(m.one)}</textarea>
+    <label class="label" for="me-links">링크 (한 줄에 하나: 이름 | URL)</label>
+    <textarea id="me-links">${esc(m.links.map(l => l.join(" | ")).join("\n"))}</textarea>
+  </section>
+  <section class="panel">
+    <div class="row" style="justify-content:space-between"><h3>내 퀴즈</h3><span class="muted">${m.quiz.length}문제</span></div>
+    <p class="muted" style="margin:0">나를 태그한 사람이 나중에 풀게 될 문제예요. 오늘 했던 이야기로 만들면 기억에 잘 남아요.</p>
+    ${m.quiz.map((q, i) => `<div class="note">${esc(q.q)} <span class="muted">→ ${esc(q.o[q.a])}</span> <button class="btn ghost small" data-delq="${i}">삭제</button></div>`).join("")}
+    <div class="qedit">
+      <input id="nq" placeholder="질문 (예: 제가 오늘 발표한 주제는?)">
+      ${[0,1,2,3].map(i => `<input id="no${i}" placeholder="${SHAPES[i]} 보기 ${i+1}" aria-label="보기 ${i+1}">`).join("")}
+      <select id="na" aria-label="정답">${[0,1,2,3].map(i => `<option value="${i}">정답: 보기 ${i+1}</option>`).join("")}</select>
+      <button class="btn ghost" data-addq>문제 추가</button>
+    </div>
+  </section>
+  <button class="btn" data-saveme>저장</button>
+  <p class="demo-note">실서비스에서는 키링 칩에 이 명함 주소(서명된 태그 링크)가 들어가고, 저장하면 서버에 반영돼요. 프로토타입은 이 브라우저에만 저장합니다.</p>`;
+}
+
+// ---------- NFC 태그 흉내 ----------
+function simulateTag(id) {
+  const p = person(id), ov = $("#overlay");
+  ov.hidden = false; ov.innerHTML = `<div class="ring">태그 중…</div>`;
+  setTimeout(() => {
+    S.found[id] = Date.now(); save();
+    ov.innerHTML = `<div class="reveal">${avatar(p, 96)}<div class="label">새로운 사람 발견!</div><h2>${esc(p.name)}</h2><div class="muted">${esc(p.role)} · ${esc(p.org)}</div>
+      <div class="mono muted">${Object.keys(S.found).length} / ${PEOPLE.length}</div><button class="btn" data-open="${id}" id="reveal-go">프로필 보기</button></div>`;
+    $("#reveal-go").focus();
+  }, 1100);
+}
+
+// ---------- events ----------
+document.addEventListener("click", e => {
+  const t = e.target.closest("button"); if (!t) return;
+  const d = t.dataset;
+  if (d.tab) { tab = d.tab; view = null; }
+  else if (d.tag) return simulateTag(d.tag);
+  else if (d.open) { $("#overlay").hidden = true; view = { type: "profile", id: d.open }; }
+  else if (d.back !== undefined) view = null;
+  else if (d.quiz) view = { type: "quiz", id: d.quiz };
+  else if (d.ans) return answer(+d.ans);
+  else if (d.send) { const v = $("#msg").value.trim(); if (!v) return; (S.msgs[d.send] ||= []).unshift({ t: v, at: Date.now() }); save(); }
+  else if (d.delq) { S.me.quiz.splice(+d.delq, 1); save(); }
+  else if (d.addq !== undefined) {
+    const q = $("#nq").value.trim(), o = [0,1,2,3].map(i => $("#no" + i).value.trim());
+    if (!q || o.some(x => !x)) { $("#nq").placeholder = "질문과 보기 4개를 모두 채워 주세요"; $("#nq").focus(); return; }
+    S.me.quiz.push({ q, o, a: +$("#na").value }); save();
+  }
+  else if (d.saveme !== undefined) {
+    S.me = { ...S.me, name: $("#me-name").value, role: $("#me-role").value, org: $("#me-org").value, one: $("#me-one").value,
+      links: $("#me-links").value.split("\n").map(l => l.split("|").map(s => s.trim())).filter(l => l[0] && /^https:\/\//.test(l[1] || "")) };
+    save(); t.textContent = "저장됨"; setTimeout(() => t.textContent = "저장", 1200); return;
+  }
+  else return;
+  render(); window.scrollTo(0, 0);
+});
+document.addEventListener("input", e => { if (e.target.id === "memo" && view) { S.notes[view.id] = e.target.value; save(); } });
+render();
+</script>
