@@ -3,7 +3,7 @@
 // 실제 로그인은 그 페이지의 버튼(POST)에서 한다.
 import { Router } from "express";
 import { randomId, randomToken, sha256 } from "../crypto.js";
-import { EMAIL_RE, HttpError, PENDING_COOKIE, SESSION_COOKIE, TERMS_VERSION, bad, cookieOptions, isSuspended, str } from "../lib.js";
+import { CLAIM_COOKIE, EMAIL_RE, HttpError, PENDING_COOKIE, SESSION_COOKIE, TERMS_VERSION, bad, cookieOptions, isSuspended, str } from "../lib.js";
 import { page } from "../pages.js";
 
 const LOGIN_TTL = 15 * 60_000;
@@ -93,7 +93,11 @@ export function authRoutes({ db, cfg, mailer, limit, meet }) {
         now,
       );
       user = { id };
+      // 행사 참가자 명단에 있던 이메일이면 이름·직함·소속을 미리 채운다 (가장 최근 명단 기준)
+      const inv = db.prepare("SELECT name, role, org FROM event_invites WHERE email = ? ORDER BY created_at DESC LIMIT 1").get(row.email);
+      if (inv) db.prepare("UPDATE users SET name = ?, role = ?, org = ? WHERE id = ?").run(inv.name, inv.role, inv.org, id);
     }
+    db.prepare("UPDATE event_invites SET user_id = ? WHERE email = ? AND user_id IS NULL").run(user.id, row.email);
     db.prepare("INSERT INTO login_events (user_id, ip, at) VALUES (?, ?, ?)").run(user.id, req.ip || "", now);
     const session = randomToken();
     db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
@@ -115,6 +119,9 @@ export function authRoutes({ db, cfg, mailer, limit, meet }) {
       }
       res.clearCookie(PENDING_COOKIE, { path: "/" });
     }
+    // 행사용 키링을 태그하고 로그인한 경우 등록 확인 화면으로
+    const claim = req.cookies[CLAIM_COOKIE];
+    if (claim && db.prepare("SELECT 1 FROM pending_claims WHERE token_hash = ? AND expires_at > ?").get(sha256(claim), now)) redirect = "/claim";
     res.json({ ok: true, userId: user.id, redirect });
   });
 

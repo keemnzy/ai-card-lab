@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS tags (
   status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','lost')),
   last_ctr    INTEGER NOT NULL DEFAULT -1,
   label       TEXT NOT NULL DEFAULT '',     -- 예: 고객사/배치 이름
+  event_id    TEXT REFERENCES events(id) ON DELETE SET NULL, -- 행사용으로 발급된 키링: 처음 태그한 사람이 등록 + 체크인
   created_at  INTEGER NOT NULL
 );
 
@@ -149,7 +150,32 @@ CREATE TABLE IF NOT EXISTS events (
   starts_at     INTEGER NOT NULL,
   ends_at       INTEGER NOT NULL,
   checkin_hash  TEXT NOT NULL UNIQUE,       -- 입구 체크인 코드 해시
+  logo_url      TEXT NOT NULL DEFAULT '',   -- 행사 테마
+  color         TEXT NOT NULL DEFAULT '',   -- #RRGGBB
+  welcome       TEXT NOT NULL DEFAULT '',
+  recap_sent_at INTEGER,
   created_at    INTEGER NOT NULL
+);
+
+-- 주최사가 올린 참가자 명단. 가입 시 프로필 미리 채우기와 행사 전 안내 메일에만 쓴다.
+-- 가입하지 않은 사람의 명단은 행사 종료 30일 뒤 삭제.
+CREATE TABLE IF NOT EXISTS event_invites (
+  event_id    TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  email       TEXT NOT NULL,
+  name        TEXT NOT NULL DEFAULT '',
+  role        TEXT NOT NULL DEFAULT '',
+  org         TEXT NOT NULL DEFAULT '',
+  user_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at  INTEGER NOT NULL,
+  sent_at     INTEGER,
+  PRIMARY KEY (event_id, email)
+);
+
+-- 행사용 키링을 태그했을 때 "내 것으로 등록" 확인 전까지 잠깐 보관 (실제로 태그했다는 증거)
+CREATE TABLE IF NOT EXISTS pending_claims (
+  token_hash  TEXT PRIMARY KEY,
+  tag_id      TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  expires_at  INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS event_attendees (
@@ -164,6 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_enc_owner ON encounters(owner_id);
 CREATE INDEX IF NOT EXISTS idx_msg_to ON messages(to_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_login_at ON login_events(at);
+CREATE INDEX IF NOT EXISTS idx_invites_email ON event_invites(email);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 `;
 
@@ -189,6 +216,7 @@ export function tx(db, fn) {
 export const RETENTION = {
   loginEvents: 90 * 86400_000, // 3개월
   reports: 365 * 86400_000, // 1년
+  unclaimedInvites: 30 * 86400_000, // 행사 종료 후 30일
 };
 
 /** 보관 기간이 지난 데이터 삭제. 서버가 1시간마다 실행한다. */
@@ -198,4 +226,9 @@ export function purgeExpired(db, now = Date.now()) {
   db.prepare("DELETE FROM pending_scans WHERE expires_at < ?").run(now);
   db.prepare("DELETE FROM login_events WHERE at < ?").run(now - RETENTION.loginEvents);
   db.prepare("DELETE FROM reports WHERE created_at < ?").run(now - RETENTION.reports);
+  db.prepare("DELETE FROM pending_claims WHERE expires_at < ?").run(now);
+  db.prepare(
+    `DELETE FROM event_invites WHERE user_id IS NULL
+     AND event_id IN (SELECT id FROM events WHERE ends_at < ?)`,
+  ).run(now - RETENTION.unclaimedInvites);
 }

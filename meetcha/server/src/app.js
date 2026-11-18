@@ -11,6 +11,7 @@ import { quizRoutes } from "./routes/quiz.js";
 import { tagRoutes } from "./routes/tags.js";
 import { eventRoutes } from "./routes/events.js";
 import { adminRoutes } from "./routes/admin.js";
+import { organizerRoutes } from "./routes/organizer.js";
 import { createBus, createMeet } from "./realtime.js";
 
 const LEGAL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../legal");
@@ -66,6 +67,7 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter() }) {
   app.use(tagRoutes(deps));
   app.use(eventRoutes(deps));
   app.use(adminRoutes(deps));
+  app.use(organizerRoutes(deps));
 
   app.use("/api", (_req, _res, next) => next(new HttpError(404, "not_found", "없는 API예요")));
   // eslint-disable-next-line no-unused-vars

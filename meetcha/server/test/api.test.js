@@ -468,3 +468,166 @@ test("실시간 피드: 누가 무엇을 받는지 (개인정보 범위 포함)"
     sb.close();
   }
 });
+
+// ---------- 행사 굿즈 포지셔닝 기능 ----------
+async function adminClient() {
+  const a = client();
+  await login(a, "admin@bs.kr");
+  return a;
+}
+const liveEvent = (admin, name = "Meetup") =>
+  admin.post("/api/admin/events", { name, client: "GSSC", startsAt: Date.now() - 60_000, endsAt: Date.now() + 3600_000 }).then((r) => r.body);
+
+test("참가자 명단 CSV: 열 이름 자동 인식, 따옴표, 잘못된 행, 중복 갱신", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin);
+  const csv = '﻿First Name,Last Name,Email,Company,Job Title\r\nAda,Lovelace,ADA@calc.io,"Analytical, Inc",Engineer\r\nBad,Row,not-an-email,X,Y\r\n"Grace","Hopper",grace@navy.mil,Navy,"Rear Admiral"\r\n';
+  const r = await admin.post(`/api/admin/events/${ev.id}/attendees/import`, { csv });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual([r.body.added, r.body.updated, r.body.invalid.length, r.body.total], [2, 0, 1, 2]);
+  const again = await admin.post(`/api/admin/events/${ev.id}/attendees/import`, { attendees: [{ email: "ada@calc.io", name: "Ada L.", org: "Calc" }] });
+  assert.deepEqual([again.body.added, again.body.updated], [0, 1]);
+  const list = (await admin.get(`/api/admin/events/${ev.id}/attendees`)).body;
+  const ada = list.attendees.find((a) => a.email === "ada@calc.io");
+  assert.deepEqual([ada.name, ada.org, ada.joined], ["Ada L.", "Calc", false]);
+  assert.equal(list.attendees.find((a) => a.email === "grace@navy.mil").org, "Navy");
+  assert.equal((await admin.post(`/api/admin/events/${ev.id}/attendees/import`, { csv: "name\nx" })).body.error, "invalid_csv");
+  const user = await newUser("plain@test.com");
+  assert.equal((await user.c.post(`/api/admin/events/${ev.id}/attendees/import`, { csv })).status, 403);
+});
+
+test("행사 전 안내 메일 → 링크로 가입하면 프로필이 미리 채워짐", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Prefill Night");
+  await admin.post(`/api/admin/events/${ev.id}/attendees/import`, { attendees: [{ email: "invitee@test.com", name: "Invi Tee", role: "PM", org: "Acme" }] });
+  const before = sent.length;
+  assert.equal((await admin.post(`/api/admin/events/${ev.id}/invites/send`)).body.sent, 1);
+  const mail = sent[before];
+  assert.equal(mail.to, "invitee@test.com");
+  assert.match(mail.subject, /Prefill Night/);
+  assert.equal((await admin.post(`/api/admin/events/${ev.id}/invites/send`)).body.sent, 0, "두 번 보내지 않음");
+  const c = client();
+  const token = new URL(mail.link).searchParams.get("token");
+  assert.equal((await c.post("/api/auth/verify", { token, consent: CONSENT })).status, 200);
+  const me = (await c.get("/api/me")).body;
+  assert.deepEqual([me.name, me.role, me.org], ["Invi Tee", "PM", "Acme"]);
+  assert.equal((await admin.get(`/api/admin/events/${ev.id}/attendees`)).body.joined, 1);
+});
+
+test("행사 테마: 형식 검사, 보드·체크인에 포함", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Themed");
+  assert.equal((await admin.put(`/api/admin/events/${ev.id}/theme`, { color: "red" })).status, 400);
+  assert.equal((await admin.put(`/api/admin/events/${ev.id}/theme`, { logoUrl: "http://x.com/a.png" })).status, 400);
+  assert.equal((await admin.put(`/api/admin/events/${ev.id}/theme`, { color: "#FF5A1F", logoUrl: "https://cdn.example.com/logo.png", welcome: "Welcome!" })).status, 200);
+  const u = await newUser("themed@test.com");
+  const ci = await u.c.post("/api/events/checkin", { code: ev.checkinCode });
+  assert.deepEqual(ci.body.theme, { logoUrl: "https://cdn.example.com/logo.png", color: "#FF5A1F", welcome: "Welcome!" });
+  assert.equal((await u.c.get(`/api/events/${ev.id}/board`)).body.event.theme.color, "#FF5A1F");
+});
+
+test("행사용 키링: 처음 태그한 사람이 로그인 → 등록 + 체크인 한 번에", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Tap Night");
+  const issued = (await admin.post("/api/admin/tags", { kind: "static", count: 1, label: "Tap Night", eventId: ev.id })).body.tags[0];
+  const path = new URL(issued.url).pathname;
+
+  const guest = client();
+  const scan = await guest.get(path);
+  assert.equal(scan.headers.get("location"), "/claim");
+  assert.match((await guest.get("/claim")).body, /로그인하면 이 키링이 내 명함과 연결돼요/);
+  const v = await login(guest, "tapper@test.com");
+  assert.equal(v.redirect, "/claim");
+  const claim = await guest.post("/api/me/tags/claim-tap");
+  assert.equal(claim.status, 200, JSON.stringify(claim.body));
+  assert.deepEqual([claim.body.eventId, claim.body.checkedIn], [ev.id, true]);
+  assert.equal((await guest.get(`/api/events/${ev.id}/board`)).status, 200, "체크인 됨");
+  assert.equal((await guest.post("/api/me/tags/claim-tap")).body.error, "claim_expired", "한 번만");
+
+  // 이제 이 키링은 tapper의 것: 다른 사람이 태그하면 tapper 명함이 열린다
+  const other = await newUser("other-tapper@test.com");
+  const s2 = await other.c.get(path);
+  assert.equal(s2.headers.get("location"), `/u/${v.userId}?new=1`);
+  // 쿠키 없이 남의 키링을 가로챌 수 없음
+  assert.equal((await other.c.post("/api/me/tags/claim-tap")).status, 410);
+});
+
+test("체크인 데스크: 운영진 휴대폰으로 태그하면 도감 대신 체크인", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Desk Night");
+  const owner = await newUser("returning@test.com", { name: "Returning" });
+  const path = await issueStaticTag(admin, owner.c); // 지난 행사에서 받은 키링이라고 가정
+  const adminDexBefore = (await admin.get("/api/dex")).body.count;
+  await admin.post(`/api/admin/events/${ev.id}/desk`, { on: true });
+  const r1 = await admin.get(path);
+  assert.equal(r1.status, 200);
+  assert.match(r1.body, /Returning님 체크인 완료/);
+  assert.match((await admin.get(path)).body, /이미 체크인했어요/);
+  assert.equal((await admin.get("/api/dex")).body.count, adminDexBefore, "운영진 도감에는 안 들어감");
+  assert.equal((await owner.c.get(`/api/events/${ev.id}/board`)).status, 200);
+  await admin.post(`/api/admin/events/${ev.id}/desk`, { on: false });
+  assert.equal((await admin.get(path)).status, 302, "데스크 모드를 끄면 일반 태그");
+  // 운영진이 아닌 사람이 데스크 쿠키를 흉내 내도 일반 태그로 처리
+  const faker = await newUser("faker@test.com");
+  faker.c.jar.mc_desk = ev.id;
+  assert.equal((await faker.c.get(path)).status, 302);
+});
+
+test("행사 리캡과 리캡 메일, 도감 행사별 묶기, vCard 내보내기", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Recap Conf");
+  const me = await newUser("recap-me@test.com", { name: "Me" });
+  const p1 = await newUser("recap-p1@test.com", { name: "Pat; One", role: "CTO", org: "Rocket, Inc", oneLiner: "Line1" });
+  const p2 = await newUser("recap-p2@test.com", { name: "Private Two", visibility: "private" });
+  await p1.c.put("/api/me/links", { links: [{ label: "LinkedIn", url: "https://linkedin.com/in/pat" }] });
+  await p1.c.put("/api/me/quiz", { quiz: [{ question: "q", options: ["a", "b", "c", "d"], answer: 0 }] });
+  for (const u of [me, p1, p2]) await u.c.post("/api/events/checkin", { code: ev.checkinCode, showOnLeaderboard: u === me });
+  await me.c.get(await issueStaticTag(admin, p1.c));
+  await me.c.get(await issueStaticTag(admin, p2.c));
+  await p1.c.get(await issueStaticTag(admin, me.c));
+  await me.c.put(`/api/users/${p1.id}/note`, { body: "Talked about rockets" });
+
+  const recap = (await me.c.get(`/api/events/${ev.id}/recap`)).body;
+  assert.deepEqual([recap.final, recap.metCount, recap.metMeCount, recap.leaderboardRank, recap.quizzesToPlay], [false, 2, 1, 1, 1]);
+  assert.equal(recap.people.find((p) => p.id === p2.id).limited, true);
+  assert.equal((await admin.get(`/api/events/${ev.id}/recap`)).status, 403, "체크인 안 한 사람");
+
+  const grouped = (await me.c.get("/api/dex?groupBy=event")).body;
+  assert.equal(grouped.groups[0].event.name, "Recap Conf");
+  assert.equal(grouped.groups[0].people.length, 2);
+
+  const one = await me.c.get(`/api/users/${p1.id}/vcard`, { raw: true });
+  assert.match(one.headers.get("content-type"), /text\/vcard/);
+  const v = await one.text();
+  assert.ok(v.includes("FN:Pat\\; One"), v);
+  assert.ok(v.includes("ORG:Rocket\\, Inc"), v);
+  assert.match(v, /TITLE:CTO/);
+  assert.match(v, /URL;TYPE=LinkedIn:https:\/\/linkedin.com\/in\/pat/);
+  assert.match(v, /Met at Recap Conf/);
+  assert.match(v, /My note: Talked about rockets/);
+  assert.ok(!/@test\.com/.test(v), "이메일은 넣지 않음");
+  assert.equal((await me.c.get(`/api/users/${p2.id}/vcard`)).status, 404, "비공개 명함은 내보낼 수 없음");
+  const all = await (await me.c.get(`/api/dex/vcard?eventId=${ev.id}`, { raw: true })).text();
+  assert.equal((all.match(/BEGIN:VCARD/g) || []).length, 1, "비공개 명함 제외");
+
+  // 리캡 메일: 끝나기 전엔 못 보냄, 끝난 뒤 한 번만
+  assert.equal((await admin.post(`/api/admin/events/${ev.id}/recap/send`)).status, 409);
+  db.prepare("UPDATE events SET ends_at = ? WHERE id = ?").run(Date.now() - 1000, ev.id);
+  const before = sent.length;
+  assert.equal((await admin.post(`/api/admin/events/${ev.id}/recap/send`)).body.sent, 3);
+  assert.ok(sent.slice(before).some((m) => m.to === "recap-me@test.com" && /2명을 만났어요/.test(m.subject)));
+  assert.equal((await admin.post(`/api/admin/events/${ev.id}/recap/send`)).body.error, "already_sent");
+  assert.equal((await me.c.get(`/api/events/${ev.id}/recap`)).body.final, true);
+});
+
+test("가입하지 않은 참가자 명단은 행사 종료 30일 뒤 삭제", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Purge");
+  await admin.post(`/api/admin/events/${ev.id}/attendees/import`, { attendees: [{ email: "ghost@test.com" }, { email: "recap-me@test.com" }] });
+  const n = () => db.prepare("SELECT COUNT(*) AS n FROM event_invites WHERE event_id = ?").get(ev.id).n;
+  const endsAt = db.prepare("SELECT ends_at FROM events WHERE id = ?").get(ev.id).ends_at;
+  purgeExpired(db, endsAt + RETENTION.unclaimedInvites - 60_000);
+  assert.equal(n(), 2);
+  purgeExpired(db, endsAt + RETENTION.unclaimedInvites + 60_000);
+  assert.equal(n(), 1, "가입한 사람(recap-me)의 명단만 남음");
+});

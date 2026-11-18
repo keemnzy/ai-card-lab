@@ -10,7 +10,7 @@ NFC 키링 태그 → 프로필 → 도감 → 퀴즈 → 메모·메시지, 그
 ```bash
 cd meetcha/server
 npm install
-npm test          # 테스트 18개
+npm test          # 테스트 25개
 npm run seed      # 예시 참가자 3명 + 키링 + 진행 중 이벤트 생성, 키링 URL 출력
 npm run dev       # http://localhost:3000
 ```
@@ -53,7 +53,9 @@ npm run dev       # http://localhost:3000
 | GET | `/t/:code` | 고정 링크 키링 태그 (NTAG215 등) |
 | GET | `/u/:id` | 태그 후 보이는 프로필 페이지 (HTML) |
 | GET | `/api/users/:id` | 프로필 (공개 범위 적용, 정답 미포함) |
-| GET | `/api/dex` | 내 도감 |
+| GET | `/api/dex` | 내 도감 (`?groupBy=event` 행사별로 묶기) |
+| GET | `/api/dex/vcard` | 도감을 연락처 파일(.vcf)로 (`?eventId=` 행사별) |
+| GET | `/api/users/:id/vcard` | 한 사람을 연락처 파일로 |
 | PUT | `/api/users/:id/note` | 나만 보는 메모 |
 | POST | `/api/users/:id/messages` | 메시지 (만난 사이만) |
 | GET | `/api/me/messages` | 받은 메시지 |
@@ -65,7 +67,17 @@ npm run dev       # http://localhost:3000
 | GET | `/api/events/:id/board` | 발견 보드 (못 만난 사람은 힌트만) |
 | GET | `/api/events/:id/leaderboard` | 리더보드 (동의한 사람만) |
 | GET | `/api/events/:id/stream` | 실시간 피드 (SSE, 아래 참고) |
-| POST | `/api/admin/tags` | 키링 발급 `{kind:"static", count}` 또는 `{kind:"sun", uids:[...]}` |
+| GET | `/api/events/:id/recap` | 행사 리캡: 만난 사람, 나를 만난 사람 수, 순위, 안 푼 퀴즈 |
+| PUT | `/api/events/:id/leaderboard-consent` | `{show}` 리더보드 동의 바꾸기 |
+| GET | `/claim` | 행사용 키링 첫 태그 후 등록 확인 페이지 (HTML) |
+| POST | `/api/me/tags/claim-tap` | 방금 태그한 행사용 키링을 내 것으로 등록 + 체크인 |
+| POST | `/api/admin/tags` | 키링 발급 `{kind:"static", count}` 또는 `{kind:"sun", uids:[...]}`. `eventId`를 주면 행사용 키링 |
+| POST | `/api/admin/events/:id/attendees/import` | 참가자 명단 `{csv}` 또는 `{attendees:[...]}` |
+| GET | `/api/admin/events/:id/attendees` | 명단, 가입·체크인 현황 |
+| POST | `/api/admin/events/:id/invites/send` | 행사 전 "카드 미리 만들기" 메일 (안 보낸 사람만) |
+| PUT | `/api/admin/events/:id/theme` | `{logoUrl, color, welcome}` |
+| POST | `/api/admin/events/:id/desk` | `{on}` 이 기기를 체크인 데스크로 |
+| POST | `/api/admin/events/:id/recap/send` | 행사 끝난 뒤 리캡 메일 (한 번만) |
 | POST | `/api/admin/events` | 이벤트 생성 → 체크인 코드 |
 | GET | `/api/admin/events/:id/report` | 고객사용 리포트 (통계만) |
 | GET | `/api/admin/reports?status=open` | 신고 목록 (신고가 많이 쌓인 사람 먼저) |
@@ -73,6 +85,19 @@ npm run dev       # http://localhost:3000
 | POST | `/api/admin/users/:id/suspend` | `{days?, reason}` 이용 정지 (days 없으면 영구), 로그인 즉시 끊김 |
 | POST | `/api/admin/users/:id/unsuspend` | 정지 해제 |
 | GET | `/legal/terms`, `/legal/privacy` | 약관·처리방침 원문 (`?lang=en` 영문) |
+
+## 행사 운영 흐름
+
+```
+행사 전   주최사 명단 CSV 업로드 ─→ "카드 미리 만들기" 메일 ─→ 참가자가 링크로 가입 (이름·직함·소속 미리 채워짐)
+          운영진이 행사용 키링 발급 (eventId)  ─→ 3D 프린팅 키링에 칩 링크 기록
+행사장    처음 받은 키링: 참가자가 자기 휴대폰으로 태그 → 로그인 → "내 키링으로 등록하고 체크인" 한 번
+          이미 키링이 있는 사람: 운영진 휴대폰(데스크 모드)에 태그 → 체크인
+          서로 키링 태그 → 발견 보드, 실시간 피드
+행사 후   리캡 메일 → 리캡 페이지(만난 사람, 퀴즈 다시 풀기) → 연락처 저장
+```
+
+CSV는 첫 줄에 열 이름이 있어야 하고 `email`은 필수. `name` 또는 `First Name`+`Last Name`, `Company`/`Organization`, `Job Title`/`Title` 등 흔한 열 이름(Luma, Eventbrite 내보내기 포함)을 알아서 맞춘다.
 
 ## 이벤트 실시간 피드
 

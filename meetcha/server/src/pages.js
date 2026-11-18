@@ -3,6 +3,21 @@
 export const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
+/** 이메일로 로그인 링크를 받는 상자 (태그 후 페이지들에서 공용) */
+export function loginBox(nonce, title) {
+  return `<div class="card"><b>${esc(title)}</b>
+    <input id="email" type="email" placeholder="이메일" style="font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line)">
+    <button id="send">로그인 링크 받기</button><p id="msg" class="muted"></p></div>
+    <script nonce="${nonce}">
+      document.getElementById("send").onclick = async () => {
+        const r = await fetch("/api/auth/request", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: document.getElementById("email").value }) });
+        const j = await r.json();
+        document.getElementById("msg").textContent = r.ok ? "메일함을 확인하세요. 15분 안에 링크를 눌러 주세요." : j.message;
+      };
+    </script>`;
+}
+
 export function page(title, body) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

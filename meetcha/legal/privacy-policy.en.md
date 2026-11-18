@@ -36,12 +36,15 @@ This policy explains how [Company legal name] ("**we**", "**us**") handles perso
 | Quiz activity | Quiz attempts and scores | Showing scores and best results | Created as you use the Service |
 | Notes and messages | Notes you write, messages you send and receive, people you block | Private notes, messaging, blocking | When you use them |
 | Events | Check-in time, whether you chose to appear on the leaderboard | Event mode (discovery board, leaderboard) | When you join an event |
+| Event guest list | Email, name, job title and company provided by the event organizer | Sending the pre-event invitation, pre-filling your card when you sign up | If the organizer shares its guest list |
 | Consent record | Which version of the Terms and Privacy Policy you accepted, and when | Proof of age confirmation and consent | Created when you sign up |
 | Reports | Who reported whom, the reason, details you provide, and the outcome | Handling harassment, impersonation and other abuse | When someone files a report |
 | Account restrictions | Suspension period and reason | Enforcing the Terms | If we restrict an account |
 | Technical | Sign-in cookie, IP address, request times, sign-in history | Keeping you signed in, blocking abuse and excessive requests, security | Automatic |
 
 We do **not** collect phone numbers, postal addresses, government IDs, payment details, precise location, or any "sensitive" information as defined by the GDPR or the CCPA.
+
+**Information from event organizers.** An organizer may share its registration list (email, name, job title, company) with us. We use it only to send a pre-event invitation and to pre-fill your card if you sign up. If you never sign up, we delete your entry 30 days after the event ends. The organizer is responsible for telling registrants that it shares this list.
 
 **Information about other people.** Notes you write may mention other people. Only you can see your notes, and we don't use them for anything else.
 
@@ -63,6 +66,7 @@ We don't make decisions about you based solely on automated processing that have
 **Other users**, according to your choices:
 - **Card visibility.** *Public*: anyone. *People I've met* (default): only people connected to you by a key-ring tap; everyone else sees your name only. *Private*: everyone else sees your name only.
 - **Event mode.** When you check in, other attendees at that event see the hint you wrote, but only during the event. People who tap your key ring see your card. When you tap someone's key ring during an event, they get a notification with your name.
+- **Saving contacts.** People who can see your card can save what it shows (name, title, company, intro, links) to their phone's contacts. Your email address is never included.
 - **Leaderboard and live activity.** Your name and the number of people you met appear on the leaderboard and in the live activity feed only if you opt in when you check in. Otherwise the feed shows only "an attendee".
 - **Quiz answers** are never sent to other users. We check answers on our servers.
 
@@ -81,7 +85,7 @@ We do **not** sell personal information, and we do **not** "share" it for cross-
 
 ## 5. International transfers
 
-[Company legal name] is based in the Republic of Korea, and your information may be processed in Korea and in the countries listed in Section 4. The European Commission has recognized Korea as providing an adequate level of data protection. For transfers to other countries without such a decision, we use the European Commission's Standard Contractual Clauses (and the UK Addendum) or another lawful transfer mechanism. Contact us for a copy.
+[Company legal name] is based in the Republic of Korea, and your information may be processed in Korea and in the countries listed in Section 4. The European Commission has recognized Korea as providing an adequate level of data protection. For transfers to other countries without such a decision, we use the European Commission's Standard Contractual Clauses (and the UK Addendum) or another lawful transfer mechanism. Contact us for a copy. Organizers in the EEA or UK who share guest lists with us do so under a data processing agreement or another lawful basis that they are responsible for.
 
 ## 6. How long we keep it
 
@@ -94,6 +98,7 @@ We keep your information until you delete your account, with these shorter limit
 | A tap made before signing in | 30 minutes, unless you sign in within that time |
 | IP addresses used for rate limiting | Held in memory only, for up to 1 hour; never written to storage |
 | Event hint visibility | Only while the event is running |
+| Guest-list entries for people who never sign up | 30 days after the event ends |
 | Sign-in history (IP address, time) | 3 months, then deleted automatically, even if you delete your account sooner |
 | Reports | 1 year after the report is filed, then deleted automatically, even if either person deletes their account, to prevent repeat abuse |
 | Backups | Overwritten within [30] days |

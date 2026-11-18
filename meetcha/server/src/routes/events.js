@@ -3,6 +3,8 @@ import { Router } from "express";
 import { sha256 } from "../crypto.js";
 import { HttpError, forbidden, notFound, requireUser, str } from "../lib.js";
 import { MAX_STREAMS_PER_USER, eventStats, leaderboard, openStream } from "../realtime.js";
+import { checkIn, eventTheme } from "../checkin.js";
+import { viewProfile } from "./social.js";
 
 export function eventRoutes({ db, limit, bus }) {
   const r = Router();
@@ -23,18 +25,17 @@ export function eventRoutes({ db, limit, bus }) {
     if (!e) throw new HttpError(400, "invalid_code", "체크인 코드를 확인해 주세요");
     const now = Date.now();
     if (now > e.ends_at) throw new HttpError(410, "event_ended", "이미 끝난 행사예요");
-    const already = isAttendee(e.id, req.user.id);
-    db.prepare(
-      `INSERT INTO event_attendees (event_id, user_id, checked_in_at, show_leaderboard) VALUES (?, ?, ?, ?)
-       ON CONFLICT (event_id, user_id) DO UPDATE SET show_leaderboard = excluded.show_leaderboard`,
-    ).run(e.id, req.user.id, now, req.body?.showOnLeaderboard === true ? 1 : 0);
-    if (!already) {
-      const stats = eventStats(db, e.id);
-      bus.publish(e.id, "checkin", { checkedIn: stats.checkedIn }, { except: req.user.id });
-      bus.publish(e.id, "stats", stats);
-    }
-    if (req.body?.showOnLeaderboard === true) bus.publish(e.id, "leaderboard", { leaders: leaderboard(db, e.id) });
-    res.json({ ok: true, eventId: e.id, name: e.name });
+    checkIn(db, bus, e, req.user.id, { showLeaderboard: req.body?.showOnLeaderboard === true, now });
+    res.json({ ok: true, eventId: e.id, name: e.name, theme: eventTheme(e) });
+  });
+
+  // 리더보드 동의 바꾸기 (체크인 뒤에도)
+  r.put("/api/events/:id/leaderboard-consent", requireUser, (req, res) => {
+    const e = getEvent(req.params.id);
+    if (!isAttendee(e.id, req.user.id)) throw forbidden("not_attendee", "체크인한 참가자만 바꿀 수 있어요");
+    if (typeof req.body?.show !== "boolean") throw new HttpError(400, "invalid_input", "show는 true/false");
+    checkIn(db, bus, e, req.user.id, { showLeaderboard: req.body.show });
+    res.json({ ok: true, show: req.body.show });
   });
 
   // 발견 보드. 못 만난 사람은 본인이 정한 힌트만 보인다. 힌트는 행사 시간에만 공개.
@@ -58,7 +59,35 @@ export function eventRoutes({ db, limit, bus }) {
         : { slot: i + 1, found: false, hint: live ? u.hint || null : null },
     );
     const found = slots.filter((s) => s.found).length;
-    res.json({ event: { id: e.id, name: e.name, startsAt: e.starts_at, endsAt: e.ends_at, live }, found, total: slots.length, slots });
+    res.json({ event: { id: e.id, name: e.name, startsAt: e.starts_at, endsAt: e.ends_at, live, theme: eventTheme(e) }, found, total: slots.length, slots });
+  });
+
+  // 행사 리캡: 이 행사에서 만난 사람, 나를 만난 사람 수, 아직 안 푼 퀴즈. 행사 중에도 볼 수 있고 끝나면 final.
+  r.get("/api/events/:id/recap", requireUser, (req, res) => {
+    const e = getEvent(req.params.id);
+    if (!isAttendee(e.id, req.user.id)) throw forbidden("not_attendee", "체크인한 참가자만 볼 수 있어요");
+    const met = db
+      .prepare("SELECT owner_id, first_at, best_score, verified FROM encounters WHERE scanner_id = ? AND event_id = ? ORDER BY first_at")
+      .all(req.user.id, e.id);
+    const people = met.map((x) => ({
+      ...viewProfile(db, req.user.id, x.owner_id),
+      metAt: x.first_at,
+      bestScore: x.best_score,
+      verified: !!x.verified,
+    }));
+    const metMe = db.prepare("SELECT COUNT(*) AS n FROM encounters WHERE owner_id = ? AND event_id = ?").get(req.user.id, e.id).n;
+    const rank = leaderboard(db, e.id).find((l) => l.id === req.user.id)?.rank ?? null;
+    const stats = eventStats(db, e.id);
+    res.json({
+      event: { id: e.id, name: e.name, startsAt: e.starts_at, endsAt: e.ends_at, theme: eventTheme(e) },
+      final: Date.now() > e.ends_at,
+      metCount: people.length,
+      metMeCount: metMe,
+      leaderboardRank: rank,
+      quizzesToPlay: people.filter((p) => !p.limited && p.quizCount > 0 && p.bestScore == null).length,
+      people,
+      eventTotals: { attendees: stats.checkedIn, encounters: stats.encounters },
+    });
   });
 
   // 리더보드: 행사 중에 만난 사람 수. 체크인할 때 동의한 사람만 이름이 나온다.
@@ -84,7 +113,7 @@ export function eventRoutes({ db, limit, bus }) {
     let unsubscribe = () => {};
     const send = openStream(req, res, { onClose: () => unsubscribe() });
     unsubscribe = bus.subscribe(e.id, req.user.id, send);
-    send("ready", { eventId: e.id, ...eventStats(db, e.id), leaders: leaderboard(db, e.id) });
+    send("ready", { eventId: e.id, theme: eventTheme(e), ...eventStats(db, e.id), leaders: leaderboard(db, e.id) });
   });
 
   return r;

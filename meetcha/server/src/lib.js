@@ -69,6 +69,7 @@ export const SESSION_COOKIE = "mc_session";
 export const TERMS_VERSION = "2027-01";
 export const isSuspended = (u, now = Date.now()) => !!u?.suspended_until && u.suspended_until > now;
 export const PENDING_COOKIE = "mc_pending";
+export const CLAIM_COOKIE = "mc_claim";
 
 export function parseCookies(header = "") {
   const out = {};

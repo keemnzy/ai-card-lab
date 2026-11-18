@@ -15,12 +15,15 @@ export function claimCode() {
 export const PERMANENT = 8.64e15; // 영구 정지 표시값
 const normalizeClaim = (c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
+export const isAdmin = (cfg, user) => !!user && cfg.adminEmails.includes(user.email);
+export const requireAdmin = (cfg) => [
+  requireUser,
+  (req, _res, next) => next(isAdmin(cfg, req.user) ? undefined : forbidden()),
+];
+
 export function adminRoutes({ db, cfg }) {
   const r = Router();
-  r.use("/api/admin", requireUser, (req, _res, next) => {
-    if (!cfg.adminEmails.includes(req.user.email)) return next(forbidden());
-    next();
-  });
+  r.use("/api/admin", ...requireAdmin(cfg));
 
   // 키링 발급. 응답의 코드는 이때 한 번만 보여 주고 서버에는 해시만 저장한다.
   //  static: { kind: "static", count, label }  → 칩에 쓸 URL + 포장 인쇄용 등록 코드
@@ -28,17 +31,20 @@ export function adminRoutes({ db, cfg }) {
   r.post("/api/admin/tags", (req, res) => {
     const kind = req.body?.kind;
     const label = str(req.body?.label, "label", { max: 60 });
+    // eventId를 주면 행사용 키링: 등록 코드 없이 처음 태그한 사람이 등록 + 체크인
+    const eventId = req.body?.eventId ?? null;
+    if (eventId && !db.prepare("SELECT 1 FROM events WHERE id = ?").get(eventId)) throw bad("invalid_input", "없는 행사예요");
     const now = Date.now();
     const out = [];
     tx(db, () => {
       const ins = db.prepare(
-        "INSERT INTO tags (id, kind, uid, code_hash, claim_hash, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tags (id, kind, uid, code_hash, claim_hash, label, event_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       );
       if (kind === "static") {
         const count = int(req.body?.count, "count", { min: 1, max: 500 });
         for (let i = 0; i < count; i++) {
           const id = randomId(), code = randomToken(16), claim = claimCode();
-          ins.run(id, "static", null, sha256(code), sha256(normalizeClaim(claim)), label, now);
+          ins.run(id, "static", null, sha256(code), sha256(normalizeClaim(claim)), label, eventId, now);
           out.push({ id, url: `${cfg.origin}/t/${code}`, claimCode: claim });
         }
       } else if (kind === "sun") {
@@ -48,7 +54,7 @@ export function adminRoutes({ db, cfg }) {
           const uid = String(raw).toUpperCase();
           if (!/^[0-9A-F]{14}$/.test(uid)) throw bad("invalid_input", `UID 형식이 올바르지 않아요: ${raw}`);
           const id = randomId(), claim = claimCode();
-          ins.run(id, "sun", uid, null, sha256(normalizeClaim(claim)), label, now);
+          ins.run(id, "sun", uid, null, sha256(normalizeClaim(claim)), label, eventId, now);
           out.push({ id, uid, claimCode: claim });
         }
       } else throw bad("invalid_input", "kind는 static 또는 sun");

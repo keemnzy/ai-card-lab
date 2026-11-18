@@ -40,25 +40,76 @@ export function socialRoutes({ db, limit }) {
     res.json(p);
   });
 
-  // 내 도감: 내가 태그한 사람들, 최근 순
-  r.get("/api/dex", requireUser, (req, res) => {
-    const rows = db
+  // 내 도감: 내가 태그한 사람들, 최근 순. ?groupBy=event 이면 행사별로 묶는다 (행사 밖에서 만난 사람은 event: null)
+  const dexRows = (userId) =>
+    db
       .prepare(
-        `SELECT e.owner_id, e.first_at, e.last_at, e.best_score, e.verified, e.event_id
-         FROM encounters e WHERE e.scanner_id = ? ORDER BY e.last_at DESC`,
+        `SELECT x.owner_id, x.first_at, x.last_at, x.best_score, x.verified, x.event_id,
+                ev.name AS event_name, ev.starts_at AS event_starts_at, n.body AS note
+         FROM encounters x LEFT JOIN events ev ON ev.id = x.event_id
+         LEFT JOIN notes n ON n.author_id = x.scanner_id AND n.about_id = x.owner_id
+         WHERE x.scanner_id = ? ORDER BY x.last_at DESC`,
       )
-      .all(req.user.id);
-    res.json({
-      count: rows.length,
-      people: rows.map((e) => ({
-        ...viewProfile(db, req.user.id, e.owner_id),
-        firstAt: e.first_at,
-        lastAt: e.last_at,
-        bestScore: e.best_score,
-        verified: !!e.verified,
-        eventId: e.event_id,
-      })),
+      .all(userId);
+
+  r.get("/api/dex", requireUser, (req, res) => {
+    const rows = dexRows(req.user.id);
+    const people = rows.map((e) => ({
+      ...viewProfile(db, req.user.id, e.owner_id),
+      firstAt: e.first_at,
+      lastAt: e.last_at,
+      bestScore: e.best_score,
+      verified: !!e.verified,
+      eventId: e.event_id,
+    }));
+    if (req.query.groupBy !== "event") return res.json({ count: rows.length, people });
+    const groups = new Map();
+    rows.forEach((e, i) => {
+      const key = e.event_id ?? "";
+      if (!groups.has(key))
+        groups.set(key, { event: e.event_id ? { id: e.event_id, name: e.event_name, startsAt: e.event_starts_at } : null, people: [] });
+      groups.get(key).people.push(people[i]);
     });
+    // 최근 행사 먼저, 행사 밖에서 만난 사람은 맨 뒤
+    const list = [...groups.values()].sort((a, b) => (b.event?.startsAt ?? -1) - (a.event?.startsAt ?? -1));
+    res.json({ count: rows.length, groups: list });
+  });
+
+  // 연락처(vCard)로 내보내기. 상대가 나에게 보여 주는 정보만 담는다 (이메일은 절대 포함하지 않음).
+  const vEsc = (v) => String(v ?? "").replace(/\r/g, "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/([,;])/g, "\\$1");
+  function vcard(p, row) {
+    const met = [
+      row?.event_name ? `Met at ${row.event_name}` : "Met",
+      row?.first_at ? `on ${new Date(row.first_at).toISOString().slice(0, 10)}` : "",
+      "via Meetcha",
+    ].filter(Boolean).join(" ");
+    const note = [p.oneLiner, met, row?.note ? `My note: ${row.note}` : ""].filter(Boolean).join("\n");
+    return [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${vEsc(p.name)}`,
+      `N:;${vEsc(p.name)};;;`,
+      p.org ? `ORG:${vEsc(p.org)}` : "",
+      p.role ? `TITLE:${vEsc(p.role)}` : "",
+      ...(p.links || []).map((l) => `URL;TYPE=${vEsc(l.label.replace(/[^A-Za-z0-9-]/g, "") || "link")}:${l.url}`),
+      `NOTE:${vEsc(note)}`,
+      "END:VCARD",
+    ].filter(Boolean).join("\r\n");
+  }
+  const sendVcf = (res, filename, body) =>
+    res.type("text/vcard; charset=utf-8").set("Content-Disposition", `attachment; filename="${filename}"`).send(body + "\r\n");
+
+  r.get("/api/users/:id/vcard", requireUser, (req, res) => {
+    const p = viewProfile(db, req.user.id, req.params.id);
+    if (!p || p.limited || p.id === req.user.id) throw notFound();
+    const row = dexRows(req.user.id).find((r) => r.owner_id === p.id);
+    sendVcf(res, "contact.vcf", vcard(p, row));
+  });
+
+  r.get("/api/dex/vcard", requireUser, (req, res) => {
+    const rows = dexRows(req.user.id).filter((r) => !req.query.eventId || r.event_id === req.query.eventId);
+    const cards = rows.map((r) => [viewProfile(db, req.user.id, r.owner_id), r]).filter(([p]) => p && !p.limited).map(([p, r]) => vcard(p, r));
+    sendVcf(res, "meetcha-contacts.vcf", cards.join("\r\n"));
   });
 
   // 나만 보는 메모 (도감에 있는 사람만)
