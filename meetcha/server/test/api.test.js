@@ -789,3 +789,20 @@ test("행사장 대형 화면: 로그인 없이 통계·리더보드만, 개인 
   db.prepare("UPDATE events SET ends_at = ? WHERE id = ?").run(Date.now() - 25 * 3600_000, ev.id);
   assert.equal((await fetch(base + d2.api)).status, 410);
 });
+
+test("운영진 콘솔용: isAdmin 표시, 행사 목록의 테마, 체크인 코드 다시 만들기", async () => {
+  const admin = await adminClient();
+  assert.equal((await admin.get("/api/me")).body.isAdmin, true);
+  const u = await newUser("console-user@test.com");
+  assert.equal((await u.c.get("/api/me")).body.isAdmin, false);
+  const ev = await liveEvent(admin, "Console Event");
+  await admin.put(`/api/admin/events/${ev.id}/theme`, { color: "#E11D6C" });
+  const item = (await admin.get("/api/admin/events")).body.events.find((e) => e.id === ev.id);
+  assert.equal(item.theme.color, "#E11D6C");
+  const re = await admin.post(`/api/admin/events/${ev.id}/checkin-code`);
+  assert.equal(re.status, 201);
+  assert.match(re.body.url, /\/board\?code=/);
+  assert.equal((await u.c.post("/api/events/checkin", { code: ev.checkinCode })).status, 400, "이전 코드는 막힘");
+  assert.equal((await u.c.post("/api/events/checkin", { code: re.body.checkinCode })).status, 200);
+  assert.equal((await u.c.post(`/api/admin/events/${ev.id}/checkin-code`)).status, 403);
+});

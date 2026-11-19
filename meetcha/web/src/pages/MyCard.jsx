@@ -235,6 +235,11 @@ export default function MyCard() {
           </div>
         </div>
         <div className="list">
+          {me.isAdmin && (
+            <Link className="list-item t-body2s c-brand" to="/admin">
+              운영진 콘솔 열기
+            </Link>
+          )}
           <a className="list-item t-body2" href="/legal/terms" target="_blank" rel="noreferrer">이용약관</a>
           <a className="list-item t-body2" href="/legal/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a>
           <button className="list-item t-body2" onClick={logout}>로그아웃</button>

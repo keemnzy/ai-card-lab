@@ -18,7 +18,7 @@ export function loadQuiz(db, userId) {
 export const loadLinks = (db, userId) =>
   db.prepare("SELECT label, url FROM links WHERE user_id = ? ORDER BY pos").all(userId).map((l) => ({ ...l }));
 
-export function meRoutes({ db, limit, storage }) {
+export function meRoutes({ db, limit, storage, cfg }) {
   const r = Router();
   r.use("/api/me", requireUser);
 
@@ -90,6 +90,7 @@ export function meRoutes({ db, limit, storage }) {
       hint: u.hint,
       photoUrl: photoUrl(u.photo),
       visibility: u.visibility,
+      isAdmin: !!cfg?.adminEmails.includes(u.email), // 운영진 콘솔 메뉴 표시용 (권한 검사는 서버가 API마다 따로 함)
       // 약관이 바뀌었으면 화면에서 다시 동의를 받아 POST /api/me/consent 로 보낸다
       consentRequired: u.terms_version !== TERMS_VERSION,
       termsVersion: TERMS_VERSION,

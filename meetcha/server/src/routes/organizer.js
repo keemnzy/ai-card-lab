@@ -155,6 +155,15 @@ export function organizerRoutes({ db, cfg, mailer }) {
     res.json({ ok: true });
   });
 
+  // 입구 체크인 코드 다시 만들기. 서버엔 해시만 있어서 코드를 다시 보여 줄 수 없으므로, 콘솔에서 QR을 띄울 때 새로 만든다.
+  // 새 코드를 만들면 이전 코드(인쇄해 둔 QR 포함)는 더 이상 쓸 수 없다.
+  r.post("/api/admin/events/:id/checkin-code", (req, res) => {
+    const e = getEvent(req.params.id);
+    const code = randomToken(12);
+    db.prepare("UPDATE events SET checkin_hash = ? WHERE id = ?").run(sha256(code), e.id);
+    res.status(201).json({ checkinCode: code, url: `${cfg.origin}/board?code=${encodeURIComponent(code)}` });
+  });
+
   // 체크인 데스크 모드: 이 기기(운영진 휴대폰)로 참가자 키링을 태그하면 도감 대신 체크인이 된다
   r.post("/api/admin/events/:id/desk", (req, res) => {
     const e = getEvent(req.params.id);

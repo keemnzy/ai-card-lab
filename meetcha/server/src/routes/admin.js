@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { Router } from "express";
 import { randomId, randomToken, sha256 } from "../crypto.js";
 import { tx } from "../db.js";
+import { eventTheme } from "../checkin.js";
 import { bad, forbidden, int, notFound, requireUser, str } from "../lib.js";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 헷갈리는 0/O, 1/I 제외
@@ -101,6 +102,8 @@ export function adminRoutes({ db, cfg }) {
         encounters: e.encounters,
         tags: { issued: e.tags, claimed: e.tags_claimed },
         recapSentAt: e.recap_sent_at,
+        theme: eventTheme(e),
+        hasDisplay: !!e.display_hash,
       }))
       .filter((e) => !status || e.status === status);
     res.json({ events: list });

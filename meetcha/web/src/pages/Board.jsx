@@ -16,7 +16,9 @@ export function BoardHome() {
     if (me) get("/api/me/events").then((r) => setEvents(r.events)).catch(() => setEvents([]));
   }, [me]);
   if (loading) return <Screen tone="base"><Spinner /></Screen>;
-  if (!me) return <Navigate to="/login?next=/board" replace />;
+  if (!me) return <Navigate to={`/login?next=${encodeURIComponent("/board" + window.location.search)}`} replace />;
+  // 입구 QR(/board?code=…)로 들어왔으면 진행 중인 행사가 있어도 그 코드로 체크인 화면을 보여 준다
+  if (new URLSearchParams(window.location.search).get("code")) return <CheckIn />;
   if (!events) return <Screen tone="base"><Spinner /></Screen>;
   const live = events.find((e) => e.status === "live") || events.find((e) => e.status === "upcoming");
   if (live) return <Navigate to={`/events/${live.id}`} replace />;
@@ -26,7 +28,8 @@ export function BoardHome() {
 // 체크인 코드 입력 (입구 QR 대신 코드로 들어올 때, 또는 행사가 없을 때)
 function CheckIn({ eventId }) {
   const nav = useNavigate();
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => new URLSearchParams(window.location.search).get("code") || "");
+  const [fromQr] = useState(() => !!new URLSearchParams(window.location.search).get("code"));
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   async function submit(e) {
@@ -43,8 +46,10 @@ function CheckIn({ eventId }) {
     <Screen tone="base">
       <form className="content" style={{ paddingTop: 48 }} onSubmit={submit}>
         <div className="heading">
-          <h1 className="t-title1">{eventId ? "체크인하면\n보드가 열려요" : "참가 중인 행사가 없어요"}</h1>
-          <p className="t-body2 c-secondary">행사장 입구의 체크인 코드를 입력하거나, 행사에서 받은 키링을 내 휴대폰으로 태그해 주세요.</p>
+          <h1 className="t-title1">{eventId ? "체크인하면\n보드가 열려요" : fromQr ? "체크인하고\n행사에 들어가요" : "참가 중인 행사가 없어요"}</h1>
+          <p className="t-body2 c-secondary">
+            {fromQr ? "입구 QR의 코드를 채워 뒀어요. 아래 버튼만 누르면 돼요." : "행사장 입구의 체크인 코드를 입력하거나, 행사에서 받은 키링을 내 휴대폰으로 태그해 주세요."}
+          </p>
         </div>
         <label className="box-field">
           <span className="stack grow" style={{ gap: 4 }}>

@@ -75,7 +75,7 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter(), stora
   if (cfg.webDist && fs.existsSync(path.join(cfg.webDist, "index.html"))) {
     const indexFile = path.join(cfg.webDist, "index.html");
     app.use("/assets", express.static(path.join(cfg.webDist, "assets"), { immutable: true, maxAge: "1y", fallthrough: false }));
-    const SPA_ROUTES = ["/", "/login", "/auth/verify", "/claim", "/onboarding", "/board", "/events/:id", "/events/:id/recap", "/u/:id", "/quiz/:id", "/dex", "/me"];
+    const SPA_ROUTES = ["/", "/login", "/auth/verify", "/claim", "/onboarding", "/board", "/events/:id", "/events/:id/recap", "/u/:id", "/quiz/:id", "/dex", "/me", "/admin", "/admin/events/:id", "/admin/reports", "/display/:token"];
     app.get(SPA_ROUTES, (_req, res) => res.set("Cache-Control", "no-cache").sendFile(indexFile));
   }
   app.use(authRoutes(deps));
