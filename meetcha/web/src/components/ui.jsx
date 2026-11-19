@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import Icon from "./Icon.jsx";
 import { avatarColor, initial } from "../lib/format.js";
+import { useSession } from "../lib/session.jsx";
 
 export function Screen({ tone = "surface", className = "", children }) {
   return <div className={`screen ${tone === "surface" ? "" : tone} ${className}`}>{children}</div>;
@@ -73,6 +74,7 @@ export function Slot({ slot, onClick, justFound }) {
 export function TabBar() {
   const cls = ({ isActive }) => (isActive ? "active" : "");
   const { pathname } = useLocation();
+  const { unread } = useSession() || {};
   // 행사 보드(/events/:id)도 '보드' 탭으로 친다. 리캡은 도감 쪽
   const onBoard = pathname === "/board" || (pathname.startsWith("/events/") && !pathname.endsWith("/recap"));
   return (
@@ -84,6 +86,13 @@ export function TabBar() {
       <NavLink to="/dex" className={cls}>
         <Icon name="book" />
         도감
+      </NavLink>
+      <NavLink to="/notes" className={cls} aria-label={unread ? `쪽지, 안 읽은 쪽지 ${unread}개` : "쪽지"}>
+        <span className="tab-icon">
+          <Icon name="note" />
+          {unread > 0 && <span className="badge-count">{unread > 99 ? "99+" : unread}</span>}
+        </span>
+        쪽지
       </NavLink>
       <NavLink to="/me" className={cls}>
         <Icon name="user" />

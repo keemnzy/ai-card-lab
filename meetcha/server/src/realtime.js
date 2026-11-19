@@ -25,6 +25,10 @@ export function createBus() {
       for (const s of subs.get(eventId) ?? []) if (s.userId === userId) n++;
       return n;
     },
+    /** 한 사람에게만, 그 사람이 열어 둔 모든 행사 피드로 (예: 새 메시지 알림) */
+    publishToUser(userId, type, data) {
+      for (const set of subs.values()) for (const s of set) if (s.userId === userId) s.send(type, data);
+    },
     /** to: 특정 사용자 ID, 없으면 그 이벤트 구독자 전원 */
     publish(eventId, type, data, { to, except } = {}) {
       for (const s of subs.get(eventId) ?? []) {

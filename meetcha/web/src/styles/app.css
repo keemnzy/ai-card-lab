@@ -198,7 +198,8 @@ p, h1, h2, h3 { margin: 0; }
 .option:disabled { cursor: default; }
 
 /* ---------- Toast ---------- */
-.toast-wrap { position: fixed; left: 0; right: 0; bottom: calc(96px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; z-index: 50; }
+/* 토스트는 바텀시트(40~41)보다 아래: 쪽지를 읽는 중에 알림이 글을 가리지 않게 */
+.toast-wrap { position: fixed; left: 0; right: 0; bottom: calc(96px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; z-index: 35; }
 .toast { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px 8px 8px; border-radius: var(--r-full); background: rgba(11, 12, 31, 0.94); color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 8px 24px rgba(13, 15, 31, 0.18); animation: toast-in 0.35s cubic-bezier(0.2, 1.2, 0.4, 1); pointer-events: auto; max-width: calc(100% - 48px); }
 .toast.plain { padding: 10px 16px; }
 @keyframes toast-in { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -207,6 +208,15 @@ p, h1, h2, h3 { margin: 0; }
 .tabbar { position: sticky; bottom: 0; display: flex; background: var(--bg-surface); border-top: 1px solid var(--line-default); padding: 8px 24px calc(8px + env(safe-area-inset-bottom)); z-index: 10; }
 .tabbar a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-disabled); padding: 2px 0; }
 .tabbar a.active { color: var(--text-primary); }
+.tab-icon { position: relative; display: inline-flex; }
+.badge-count { position: absolute; top: -4px; left: 14px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-full); background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg-surface); }
+
+/* ---------- 쪽지 ---------- */
+.note-row { padding: 14px 0; }
+.note-row .preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.note-row.unread .t-body1s { font-weight: 700; }
+.note-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex: none; }
+.note-body { white-space: pre-wrap; word-break: break-word; background: var(--bg-base); border-radius: var(--r-lg); padding: 18px; max-height: 45dvh; overflow: auto; }
 
 /* ---------- Bottom sheet ---------- */
 .dim { position: fixed; inset: 0; background: rgba(11, 12, 31, 0.4); z-index: 40; animation: fade 0.2s ease; }

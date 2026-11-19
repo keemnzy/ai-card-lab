@@ -257,7 +257,7 @@ export default function MyCard() {
       {sheet?.type === "leave" && (
         <Sheet onClose={() => setSheet(null)} label="탈퇴">
           <h2 className="t-title2">정말 탈퇴할까요?</h2>
-          <p className="t-body2 c-secondary">내 명함, 퀴즈, 도감, 메시지가 모두 지워지고 되돌릴 수 없어요. 내가 만난 사람들의 도감에는 "탈퇴한 사용자"로만 남아요.</p>
+          <p className="t-body2 c-secondary">내 명함, 퀴즈, 도감, 쪽지가 모두 지워지고 되돌릴 수 없어요. 내가 만난 사람들의 도감에는 "탈퇴한 사용자"로만 남아요.</p>
           <Button variant="neutral" onClick={leave}>탈퇴하기</Button>
         </Sheet>
       )}

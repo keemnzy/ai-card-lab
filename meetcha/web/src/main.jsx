@@ -17,6 +17,7 @@ import Quiz from "./pages/Quiz.jsx";
 import Recap from "./pages/Recap.jsx";
 import Dex from "./pages/Dex.jsx";
 import MyCard from "./pages/MyCard.jsx";
+import Notes from "./pages/Notes.jsx";
 import AdminEvents from "./admin/AdminEvents.jsx";
 import AdminEvent from "./admin/AdminEvent.jsx";
 import AdminReports from "./admin/AdminReports.jsx";
@@ -51,6 +52,7 @@ createRoot(document.getElementById("root")).render(
           <Route path="/quiz/:userId" element={<Quiz />} />
           <Route path="/dex" element={<Dex />} />
           <Route path="/me" element={<MyCard />} />
+          <Route path="/notes" element={<Notes />} />
           <Route path="/admin" element={<AdminEvents />} />
           <Route path="/admin/events/:id" element={<AdminEvent />} />
           <Route path="/admin/reports" element={<AdminReports />} />

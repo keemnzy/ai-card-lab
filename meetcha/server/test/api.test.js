@@ -806,3 +806,50 @@ test("운영진 콘솔용: isAdmin 표시, 행사 목록의 테마, 체크인 �
   assert.equal((await u.c.post("/api/events/checkin", { code: re.body.checkinCode })).status, 200);
   assert.equal((await u.c.post(`/api/admin/events/${ev.id}/checkin-code`)).status, 403);
 });
+
+test("쪽지함: 받은·보낸 쪽지, 안 읽은 수, 열면 그 쪽지만 읽음, 실시간 알림, 차단", async () => {
+  const admin = await adminClient();
+  const ev = await liveEvent(admin, "Note Night");
+  const a = await newUser("note-a@test.com", { name: "NoteA" });
+  const b = await newUser("note-b@test.com", { name: "NoteB" });
+  const stranger = await newUser("note-x@test.com", { name: "Stranger" });
+  for (const u of [a, b]) await u.c.post("/api/events/checkin", { code: ev.checkinCode });
+  await a.c.get(await issueStaticTag(admin, b.c)); // A가 B를 태그 → 서로 쪽지 가능
+
+  // B가 행사 피드를 열어 두면 새 쪽지가 실시간으로 알려진다
+  const sb = await stream(b.c, `/api/events/${ev.id}/stream`);
+  try {
+    await sb.wait("ready");
+    const sent = await a.c.post(`/api/users/${b.id}/messages`, { body: "오늘 반가웠어요!" });
+    assert.deepEqual([sent.status, sent.body.message.body], [201, "오늘 반가웠어요!"]);
+    const live = await sb.wait("message");
+    assert.deepEqual([live.from.name, live.preview], ["NoteA", "오늘 반가웠어요!"]);
+  } finally {
+    sb.close();
+  }
+  await a.c.post(`/api/users/${b.id}/messages`, { body: "다음 주에 커피 어때요?" });
+
+  assert.equal((await b.c.get("/api/me/unread")).body.messages, 2);
+  const inbox = (await b.c.get("/api/me/notes")).body.notes;
+  assert.deepEqual(inbox.map((n) => [n.body, n.read, n.from.name]), [["다음 주에 커피 어때요?", false, "NoteA"], ["오늘 반가웠어요!", false, "NoteA"]]);
+  assert.equal((await b.c.get("/api/me/unread")).body.messages, 2, "목록을 봐도 읽음 처리 안 됨");
+
+  // 한 통을 열면 그 쪽지만 읽음
+  assert.equal((await b.c.post(`/api/me/notes/${inbox[0].id}/read`)).status, 200);
+  assert.equal((await b.c.get("/api/me/unread")).body.messages, 1);
+  assert.equal((await a.c.post(`/api/me/notes/${inbox[1].id}/read`)).status, 404, "남의 쪽지는 읽음 처리 불가");
+
+  // 보낸 쪽지함: 받는 사람이 읽었는지는 보여 주지 않음
+  const sentBox = (await a.c.get("/api/me/notes?box=sent")).body.notes;
+  assert.deepEqual([sentBox.length, sentBox[0].to.name, sentBox[0].read], [2, "NoteB", undefined]);
+
+  // 답장도 그냥 쪽지 한 통
+  await b.c.post(`/api/users/${a.id}/messages`, { body: "좋아요 ☕" });
+  assert.equal((await a.c.get("/api/me/notes")).body.notes[0].body, "좋아요 ☕");
+
+  // 만나지 않은 사람에겐 못 보냄, 차단하면 받은 쪽지함과 배지에서 빠짐
+  assert.equal((await stranger.c.post(`/api/users/${a.id}/messages`, { body: "?" })).status, 403);
+  await b.c.post(`/api/users/${a.id}/block`);
+  assert.equal((await b.c.get("/api/me/notes")).body.notes.length, 0);
+  assert.equal((await b.c.get("/api/me/unread")).body.messages, 0);
+});

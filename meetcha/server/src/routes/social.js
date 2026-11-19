@@ -26,7 +26,7 @@ export function viewProfile(db, viewerId, ownerId) {
   return { ...base, photoUrl: photoUrl(u.photo), role: u.role, org: u.org, oneLiner: u.one_liner, links: loadLinks(db, ownerId), quizCount };
 }
 
-export function socialRoutes({ db, limit }) {
+export function socialRoutes({ db, limit, bus }) {
   const r = Router();
 
   r.get("/api/users/:id", (req, res) => {
@@ -135,17 +135,61 @@ export function socialRoutes({ db, limit }) {
     const body = str(req.body?.body, "body", { max: 500, min: 1 });
     const blocked = db.prepare("SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?").get(to, req.user.id);
     const recipient = db.prepare("SELECT deleted_at, suspended_until FROM users WHERE id = ?").get(to);
-    if (!blocked && recipient && !recipient.deleted_at && !isSuspended(recipient))
-      db.prepare("INSERT INTO messages (id, from_id, to_id, body, created_at) VALUES (?, ?, ?, ?, ?)").run(
-        randomId(),
-        req.user.id,
-        to,
-        body,
-        Date.now(),
-      );
-    res.status(201).json({ ok: true });
+    const msg = { id: randomId(), body, at: Date.now(), fromMe: true, read: false };
+    if (!blocked && recipient && !recipient.deleted_at && !isSuspended(recipient)) {
+      db.prepare("INSERT INTO messages (id, from_id, to_id, body, created_at) VALUES (?, ?, ?, ?, ?)").run(msg.id, req.user.id, to, body, msg.at);
+      bus?.publishToUser(to, "message", { from: { id: req.user.id, name: req.user.name, photoUrl: photoUrl(req.user.photo) }, preview: body.slice(0, 60) });
+    }
+    // 차단당했어도 보낸 사람에겐 똑같이 보여 준다 (차단 여부를 알리지 않음)
+    res.status(201).json({ ok: true, message: msg });
   });
 
+  // ---------- 쪽지함 ----------
+  // 대화방 없이 쪽지 한 통씩. 받은 쪽지 / 보낸 쪽지 목록, 쪽지를 열면 그 한 통만 읽음 처리.
+  const personOf = (viewerId, id) => {
+    const p = viewProfile(db, viewerId, id);
+    return { id: p.id, name: p.name, photoUrl: p.photoUrl ?? null, role: p.role ?? "", org: p.org ?? "", deleted: p.deleted, limited: p.limited };
+  };
+
+  // ?box=inbox(기본) | sent
+  r.get("/api/me/notes", requireUser, (req, res) => {
+    const me = req.user.id;
+    const sent = req.query.box === "sent";
+    const rows = sent
+      ? db.prepare("SELECT id, body, created_at, read_at, to_id AS other FROM messages WHERE from_id = ? ORDER BY created_at DESC LIMIT 200").all(me)
+      : db
+          .prepare(
+            `SELECT id, body, created_at, read_at, from_id AS other FROM messages WHERE to_id = ?
+             AND from_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) ORDER BY created_at DESC LIMIT 200`,
+          )
+          .all(me, me);
+    const people = new Map();
+    const notes = rows.map((m) => {
+      if (!people.has(m.other)) people.set(m.other, personOf(me, m.other));
+      // 보낸 쪽지는 상대가 읽었는지 알려 주지 않는다 (부담 없이 보내도록)
+      return { id: m.id, body: m.body, at: m.created_at, read: sent ? undefined : !!m.read_at, [sent ? "to" : "from"]: people.get(m.other) };
+    });
+    res.json({ box: sent ? "sent" : "inbox", notes });
+  });
+
+  r.post("/api/me/notes/:id/read", requireUser, (req, res) => {
+    const t = db.prepare("UPDATE messages SET read_at = COALESCE(read_at, ?) WHERE id = ? AND to_id = ?").run(Date.now(), req.params.id, req.user.id);
+    if (!t.changes) throw notFound();
+    res.json({ ok: true });
+  });
+
+  // 안 읽은 쪽지 수 (탭 배지용, 가볍게)
+  r.get("/api/me/unread", requireUser, (req, res) => {
+    const n = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM messages WHERE to_id = ? AND read_at IS NULL
+         AND from_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?)`,
+      )
+      .get(req.user.id, req.user.id).n;
+    res.json({ messages: n });
+  });
+
+  // (예전 API) 받은 쪽지 전체. 읽음 처리는 하지 않는다 — 쪽지를 열 때만 읽음.
   r.get("/api/me/messages", requireUser, (req, res) => {
     const rows = db
       .prepare(
@@ -154,7 +198,6 @@ export function socialRoutes({ db, limit }) {
          WHERE m.to_id = ? ORDER BY m.created_at DESC LIMIT 200`,
       )
       .all(req.user.id);
-    db.prepare("UPDATE messages SET read_at = ? WHERE to_id = ? AND read_at IS NULL").run(Date.now(), req.user.id);
     res.json({
       messages: rows.map((m) => ({ id: m.id, body: m.body, createdAt: m.created_at, read: !!m.read_at, from: { id: m.from_id, name: m.from_name } })),
     });

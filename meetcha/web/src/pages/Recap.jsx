@@ -67,7 +67,7 @@ export default function Recap() {
           {[
             [r.leaderboardRank ? `${r.leaderboardRank}위` : "—", `${r.eventTotals.attendees}명 중`],
             [`${toPlay.length}개`, "남은 퀴즈"],
-            [`${msgs}개`, "받은 메시지"],
+            [`${msgs}개`, "받은 쪽지"],
           ].map(([v, l]) => (
             <div key={l} className="stat">
               <span className="t-title3">{v}</span>

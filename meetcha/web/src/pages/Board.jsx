@@ -82,7 +82,7 @@ export default function Board() {
   const [leaders, setLeaders] = useState([]);
   const [fresh, setFresh] = useState(() => new Set());
   const prevFound = useRef(new Set());
-  const { me } = useSession();
+  const { me, refreshUnread } = useSession();
 
   const load = useCallback(async () => {
     try {
@@ -104,6 +104,10 @@ export default function Board() {
     checkin: () => load(),
     found: () => load(),
     tagged: (d) => toast(`${d.by.name}님이 나를 태그했어요`, d.by),
+    message: (d) => {
+      toast(`${d.from.name}님이 쪽지를 보냈어요`, d.from);
+      refreshUnread();
+    },
     leaderboard: (d) => setLeaders(d.leaders || []),
   });
 

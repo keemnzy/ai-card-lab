@@ -63,7 +63,10 @@ npm run dev       # http://localhost:3000
 | GET | `/api/users/:id/vcard` | 한 사람을 연락처 파일로 |
 | PUT | `/api/users/:id/note` | 나만 보는 메모 |
 | POST | `/api/users/:id/messages` | 메시지 (만난 사이만) |
-| GET | `/api/me/messages` | 받은 메시지 |
+| GET | `/api/me/notes?box=inbox\|sent` | 쪽지함 (받은 쪽지·보낸 쪽지). 보낸 쪽지엔 상대가 읽었는지 표시하지 않음 |
+| POST | `/api/me/notes/:id/read` | 쪽지 한 통 읽음 처리 |
+| GET | `/api/me/unread` | 안 읽은 쪽지 수 (탭 배지) |
+| GET | `/api/me/messages` | 받은 쪽지 전체 (예전 API, 읽음 처리 안 함) |
 | POST | `/api/users/:id/block` | 차단 |
 | POST | `/api/users/:id/report` | `{reason, detail}` 신고 (만난 사람이나 전체 공개 명함만) |
 | POST | `/api/users/:id/quiz/attempts` | 퀴즈 시작 (도감에 있는 사람만) |
@@ -119,6 +122,7 @@ CSV는 첫 줄에 열 이름이 있어야 하고 `email`은 필수. `name` 또�
 | `checkin` | 참가자 전원 (본인 제외) | 체크인 수만. 이름 없음 → 보드를 다시 불러와 가려진 카드 추가 |
 | `found` | 태그한 본인 | 새로 발견한 사람의 이름·직함·소속 |
 | `tagged` | 태그당한 사람 | 나를 태그한 사람 이름 |
+| `message` | 쪽지 받은 사람 | 보낸 사람, 앞부분 60자 (행사 피드를 열어 둔 경우) |
 | `activity` | 참가자 전원 | 누가 몇 명째 만났는지. 리더보드 비동의자는 `who: null` |
 | `stats` | 참가자 전원 | 체크인 수, 만남 수 |
 | `leaderboard` | 참가자 전원 | 리더보드 (동의자만) |

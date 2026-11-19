@@ -7,7 +7,7 @@ export function useEventStream(eventId, handlers) {
   useEffect(() => {
     if (!eventId || typeof EventSource === "undefined") return;
     const es = new EventSource(`/api/events/${eventId}/stream`);
-    const types = ["ready", "checkin", "found", "tagged", "activity", "stats", "leaderboard"];
+    const types = ["ready", "checkin", "found", "tagged", "activity", "stats", "leaderboard", "message"];
     const listeners = types.map((t) => {
       const fn = (e) => {
         try {

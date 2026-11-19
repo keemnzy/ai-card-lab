@@ -160,7 +160,7 @@ export default function Quiz() {
         <div className="bottom-cta">
           <div className="row">
             <Button variant="secondary" onClick={() => nav(`/u/${userId}?msg=1`, { replace: true })}>
-              메시지 보내기
+              쪽지 보내기
             </Button>
             {nextPerson ? (
               <Button onClick={() => nav(`/quiz/${nextPerson.id}`, { replace: true })}>다음 사람</Button>

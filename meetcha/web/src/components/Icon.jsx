@@ -60,6 +60,12 @@ const P = {
     </g>
   ),
   trash: <path d="M5 7h14M10 4h4M8 7l1 13h6l1-13" />,
+  note: (
+    <g>
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+      <path d="M4 7l8 6 8-6" />
+    </g>
+  ),
 };
 
 export default function Icon({ name, size = 24, className, style }) {

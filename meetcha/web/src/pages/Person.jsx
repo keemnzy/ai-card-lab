@@ -6,6 +6,7 @@ import { useSession } from "../lib/session.jsx";
 import { dateLabel, roleLine, vibrate } from "../lib/format.js";
 import { Avatar, Button, Chip, ErrorState, Screen, Sheet, Spinner, TopBar, useToast } from "../components/ui.jsx";
 import Icon from "../components/Icon.jsx";
+import NoteSheet from "../components/NoteSheet.jsx";
 
 const CONFETTI = ["#EC2B7A", "#CEFF32", "#FE7BBF", "#4FC3F7", "#FFD54F", "#ffffff"];
 
@@ -97,37 +98,6 @@ function Locked({ person, id }) {
   );
 }
 
-function MessageSheet({ person, onClose }) {
-  const [body, setBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const toast = useToast();
-  async function send() {
-    setBusy(true);
-    try {
-      await post(`/api/users/${person.id}/messages`, { body });
-      toast("메시지를 보냈어요");
-      onClose();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Sheet onClose={onClose} label="메시지 보내기">
-      <h2 className="t-title2">{person.name}님에게</h2>
-      <label className="box-field" style={{ alignItems: "flex-start" }}>
-        <textarea rows={4} maxLength={500} autoFocus placeholder="오늘 반가웠어요! 다음에 커피 한잔해요" value={body} onChange={(e) => setBody(e.target.value)} />
-      </label>
-      {error && <p className="error-text">{error}</p>}
-      <Button disabled={!body.trim() || busy} onClick={send}>
-        보내기
-      </Button>
-    </Sheet>
-  );
-}
-
 const REASONS = [
   ["harassment", "괴롭힘·원치 않는 연락"],
   ["spam", "스팸·광고"],
@@ -183,7 +153,7 @@ function MoreSheet({ person, onClose }) {
       {mode === "block" && (
         <>
           <h2 className="t-title2">{person.name}님을 차단할까요?</h2>
-          <p className="t-body2 c-secondary">차단하면 이 사람이 보내는 메시지를 받지 않아요. 상대에게는 알리지 않아요.</p>
+          <p className="t-body2 c-secondary">차단하면 이 사람이 보내는 쪽지를 받지 않아요. 상대에게는 알리지 않아요.</p>
           <Button onClick={block}>차단하기</Button>
         </>
       )}
@@ -322,11 +292,11 @@ export default function Person() {
             <a className="btn secondary" href={`/api/users/${p.id}/vcard`}>
               연락처 저장
             </a>
-            <Button onClick={() => setSheet("msg")}>메시지 보내기</Button>
+            <Button onClick={() => setSheet("msg")}>쪽지 보내기</Button>
           </div>
         </div>
       )}
-      {sheet === "msg" && <MessageSheet person={p} onClose={() => setSheet(null)} />}
+      {sheet === "msg" && <NoteSheet person={p} onClose={() => setSheet(null)} />}
       {sheet === "more" && <MoreSheet person={p} onClose={() => setSheet(null)} />}
       {isNew && <Reveal person={p} order={order} eventId={eventId} onClose={() => setParams({}, { replace: true })} />}
     </Screen>
