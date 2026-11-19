@@ -1,0 +1,136 @@
+/* Meetcha 디자인 토큰 — Figma 변수 `Meetcha` 컬렉션(Light / Dark)과 같은 값.
+   핑크 = 행동(버튼·진행·선택), 연두 = 보상(발견·정답·점수). 모드에 따라 바탕만 바뀐다. */
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
+:root {
+  --bg-base: #f4f4f7;
+  --bg-surface: #ffffff;
+  --bg-subtle: #fafafc;
+  --text-primary: #14151f;
+  --text-secondary: #4a4d5e;
+  --text-tertiary: #8a8d9c;
+  --text-disabled: #b6b8c3;
+  --text-on-brand: #ffffff;
+  --text-on-accent: #14151f;
+  --text-on-dark: #ffffff;
+  --line-default: #e6e6ec;
+  --line-strong: #d2d3db;
+  --brand: #e11d6c;
+  --brand-strong: #c2125a;
+  --brand-weak: #ffe8f2;
+  --brand-soft: #fe7bbf;
+  --accent: #ceff32;
+  --accent-weak: #f4ffd6;
+  --fog: #0b0c1f;
+  --fog-raised: #1e2035;
+  --fog-text: #9a9db8;
+  --success: #14b885;
+  --success-weak: #e6f8f1;
+  --danger: #f04452;
+  --danger-weak: #feecee;
+  --warning: #ffb020;
+  --neon-pink: #ec2b7a;
+  --black-russian: #000215;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-full: 999px;
+
+  /* 영문·숫자는 Helvetica Neue(기기에 있을 때), 한글은 Pretendard */
+  --font: "Helvetica Neue", "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Arial, sans-serif;
+
+  --shadow-card: 0 12px 32px rgba(20, 21, 31, 0.08);
+  --grain-opacity: 0.16;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg-base: #000215;
+  --bg-surface: #0d0f24;
+  --bg-subtle: #14162d;
+  --text-primary: #f5f5fa;
+  --text-secondary: #b7b9cc;
+  --text-tertiary: #7d809a;
+  --text-disabled: #4e5170;
+  --text-on-accent: #0a0b14;
+  --line-default: #1f2238;
+  --line-strong: #30344e;
+  --brand-strong: #ff3d8b;
+  --brand-weak: #2a0b19;
+  --accent-weak: #1e240c;
+  --fog: #15172e;
+  --fog-raised: #22253f;
+  --fog-text: #8d90ae;
+  --success: #4ade80;
+  --success-weak: #0e2a1c;
+  --danger: #ff5a67;
+  --danger-weak: #331219;
+  --warning: #ffc14d;
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --grain-opacity: 0.1;
+  color-scheme: dark;
+}
+
+/* 텍스트 스타일 (Figma Meetcha/*) */
+.t-display { font-size: 44px; line-height: 54px; font-weight: 800; letter-spacing: -0.02em; }
+.t-title1 { font-size: 26px; line-height: 36px; font-weight: 700; letter-spacing: -0.015em; }
+.t-title2 { font-size: 22px; line-height: 31px; font-weight: 700; letter-spacing: -0.01em; }
+.t-title3 { font-size: 18px; line-height: 26px; font-weight: 600; letter-spacing: -0.005em; }
+.t-body1 { font-size: 17px; line-height: 26px; font-weight: 400; letter-spacing: -0.005em; }
+.t-body1s { font-size: 17px; line-height: 26px; font-weight: 600; letter-spacing: -0.005em; }
+.t-body2 { font-size: 15px; line-height: 22px; font-weight: 400; letter-spacing: -0.003em; }
+.t-body2s { font-size: 15px; line-height: 22px; font-weight: 600; letter-spacing: -0.003em; }
+.t-caption { font-size: 13px; line-height: 18px; font-weight: 500; }
+.t-label { font-size: 12px; line-height: 16px; font-weight: 600; }
+
+.c-secondary { color: var(--text-secondary); }
+.c-tertiary { color: var(--text-tertiary); }
+.c-brand { color: var(--brand-strong); }
+.c-accent { color: var(--accent); }
+.c-success { color: var(--success); }
+.c-danger { color: var(--danger); }
+
+/* 그라데이션 + 그레인: '순간'(발견·리캡)과 히어로에만 */
+.grain { position: relative; isolation: isolate; }
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.grain > :not(.tabbar, .bottom-cta, .confetti) { position: relative; z-index: 1; }
+.grain > .tabbar, .grain > .bottom-cta { z-index: 2; }
+
+.gradient-hero {
+  background: linear-gradient(180deg, var(--neon-pink) 0%, var(--brand-soft) 62%, #f3b6a0 82%, var(--accent) 100%);
+}
+:root[data-theme="dark"] .gradient-hero {
+  background:
+    radial-gradient(80% 60% at 10% 10%, rgba(236, 43, 122, 0.85), transparent 70%),
+    radial-gradient(70% 55% at 95% 100%, rgba(206, 255, 50, 0.7), transparent 70%),
+    var(--black-russian);
+}
+.gradient-aurora {
+  background:
+    radial-gradient(70% 40% at 20% 25%, rgba(236, 43, 122, 0.75), transparent 70%),
+    radial-gradient(65% 40% at 90% 85%, rgba(206, 255, 50, 0.55), transparent 70%),
+    radial-gradient(50% 30% at 60% 55%, rgba(254, 123, 191, 0.35), transparent 70%),
+    var(--black-russian);
+}
+.gradient-glow {
+  background:
+    radial-gradient(60% 22% at 85% 5%, color-mix(in srgb, var(--brand-soft) 35%, transparent), transparent 70%),
+    radial-gradient(45% 16% at 5% 18%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%),
+    var(--bg-base);
+}
+.gradient-progress { background: linear-gradient(90deg, var(--neon-pink), var(--brand-soft) 55%, var(--accent)); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

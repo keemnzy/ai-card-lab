@@ -83,6 +83,14 @@ export function tagRoutes({ db, cfg, limit, meet, bus }) {
       .get(sha256(t), Date.now());
   };
 
+  // 행사용 키링 등록 화면(웹)이 쓰는 정보. 방금 태그한 키링이 있을 때만.
+  r.get("/api/claim", (req, res) => {
+    const c = pendingClaim(req);
+    if (!c || c.status !== "active" || (c.owner_id && c.owner_id !== req.user?.id))
+      throw new HttpError(410, "claim_expired", "키링을 다시 태그해 주세요. 이미 다른 사람이 등록했을 수도 있어요");
+    res.json({ eventId: c.event_id, eventName: c.event_name, checkinAvailable: !!c.event_id && Date.now() <= c.ends_at });
+  });
+
   // 행사용 키링 등록 확인 페이지
   r.get("/claim", (req, res) => {
     const c = pendingClaim(req);

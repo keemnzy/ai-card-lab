@@ -12,6 +12,7 @@ export function loadConfig(env = process.env) {
     origin,
     dbPath: env.DB_PATH || "meetcha.db",
     uploadDir: env.UPLOAD_DIR || "uploads",
+    webDist: env.WEB_DIST || null, // 참가자 화면 빌드 폴더 (server.js가 기본값 ../web/dist를 넣는다)
     secureCookies: origin.startsWith("https://"),
     trustProxy: env.TRUST_PROXY ? Number(env.TRUST_PROXY) : false,
     adminEmails: (env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),

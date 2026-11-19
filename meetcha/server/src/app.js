@@ -1,5 +1,6 @@
 // Express 앱 조립. 테스트에서도 같은 함수로 앱을 만든다.
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -30,7 +31,8 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter(), stora
   app.use((req, res, next) => {
     res.locals.nonce = crypto.randomBytes(16).toString("base64");
     res.set({
-      "Content-Security-Policy": `default-src 'self'; script-src 'nonce-${res.locals.nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
+      // 스크립트: 우리 서버의 파일(빌드된 화면) + nonce가 붙은 인라인만. 이미지: blob:은 리캡 공유 이미지 미리보기용.
+      "Content-Security-Policy": `default-src 'self'; script-src 'self' 'nonce-${res.locals.nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "same-origin",
       "X-Frame-Options": "DENY",
@@ -68,6 +70,14 @@ export function createApp({ db, cfg, mailer, now, limit = createLimiter(), stora
     const file = path.join(LEGAL_DIR, `${name}${req.query.lang === "en" ? ".en" : ""}.md`);
     res.type("text/plain; charset=utf-8").sendFile(file, (err) => err && next(new HttpError(404, "not_found", "문서를 찾을 수 없어요")));
   });
+  // 참가자 화면(web/dist). 빌드돼 있으면 화면 주소는 모두 index.html로 보내고 나머지는 React가 그린다.
+  // 빌드가 없으면(테스트·개발 초기) 서버가 직접 그리는 간단한 페이지(/u, /claim, /auth/verify)가 대신 동작한다.
+  if (cfg.webDist && fs.existsSync(path.join(cfg.webDist, "index.html"))) {
+    const indexFile = path.join(cfg.webDist, "index.html");
+    app.use("/assets", express.static(path.join(cfg.webDist, "assets"), { immutable: true, maxAge: "1y", fallthrough: false }));
+    const SPA_ROUTES = ["/", "/login", "/auth/verify", "/claim", "/onboarding", "/board", "/events/:id", "/events/:id/recap", "/u/:id", "/quiz/:id", "/dex", "/me"];
+    app.get(SPA_ROUTES, (_req, res) => res.set("Cache-Control", "no-cache").sendFile(indexFile));
+  }
   app.use(authRoutes(deps));
   app.use(meRoutes(deps));
   app.use(socialRoutes(deps));

@@ -544,6 +544,9 @@ test("행사용 키링: 처음 태그한 사람이 로그인 → 등록 + 체크
   const guest = client();
   const scan = await guest.get(path);
   assert.equal(scan.headers.get("location"), "/claim");
+  const info = await guest.get("/api/claim");
+  assert.deepEqual([info.status, info.body.eventName, info.body.checkinAvailable], [200, "Tap Night", true]);
+  assert.equal((await client().get("/api/claim")).status, 410, "태그하지 않은 사람에겐 정보 없음");
   assert.match((await guest.get("/claim")).body, /로그인하면 이 키링이 내 명함과 연결돼요/);
   const v = await login(guest, "tapper@test.com");
   assert.equal(v.redirect, "/claim");

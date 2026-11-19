@@ -1,8 +1,11 @@
+import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { openDb, purgeExpired } from "./db.js";
 
 const cfg = loadConfig();
+// 참가자 화면: meetcha/web 에서 `npm run build` 하면 생기는 폴더
+cfg.webDist ??= fileURLToPath(new URL("../../web/dist", import.meta.url));
 const db = openDb(cfg.dbPath);
 
 // 메일 발송: 개발 중에는 터미널에 로그인 링크를 출력한다.
