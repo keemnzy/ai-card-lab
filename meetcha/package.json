@@ -1,0 +1,11 @@
+{
+  "name": "meetcha",
+  "private": true,
+  "description": "Meetcha: 행사 네트워킹 기념품 NFC 키링 (server + web)",
+  "scripts": {
+    "demo": "node --disable-warning=ExperimentalWarning scripts/demo.mjs",
+    "demo:local": "node --disable-warning=ExperimentalWarning scripts/demo.mjs --local",
+    "test": "npm --prefix server test",
+    "build": "npm --prefix web run build"
+  }
+}
