@@ -15,18 +15,24 @@
 | 남의 얼굴은 남의 것 | 공유 이미지, 대형 화면에는 다른 참가자 얼굴을 넣지 않음 |
 | Kahoot과 다르게 | 퀴즈 보기는 2×2 색깔 도형이 아니라 세로로 쌓인 큰 카드 |
 
-## 브랜드 컬러: Neon Petal (검토 중)
+## 브랜드 컬러: Neon Petal, Light / Dark
 
-Figma 변수 `Meetcha` 컬렉션에 모드 3개가 있다. 화면(프레임)의 변수 모드만 바꾸면 전체 색이 바뀐다.
+한 브랜드, 두 모드. **메인 컬러의 역할은 두 모드에서 같고, 바탕만 바뀐다.** Figma 변수 `Meetcha` 컬렉션의 `Light` / `Dark` 모드로 관리한다.
 
-| 모드 | 메인 | 포인트 | 바탕 |
-|---|---|---|---|
-| Violet (처음 시안) | 바이올렛 #5B47FB | 같음 | 밝은 회색 |
-| **Neon Light (A안)** | 네온 핑크 #E11D6C (흰 글씨 대비 4.6:1을 위해 #EC2B7A보다 살짝 진하게) | 차트리우스 #CEFF32 | 밝은 회색 |
-| **Neon Dark (B안)** | 차트리우스 #CEFF32 (검정 글씨) | 네온 핑크 #FF3D8B | 블랙 러시안 #000215 |
+| 역할 | 색 | 어디에 |
+|---|---|---|
+| **핑크 = 행동** | #E11D6C (흰 글씨 대비 4.6:1을 위해 #EC2B7A보다 살짝 진하게) | 메인 버튼, 진행, 선택된 상태 |
+| **연두 = 보상** | 차트리우스 #CEFF32 (항상 검정 글씨, 대비 14:1) | 새 사람 발견 버튼·배지, 퀴즈 정답, 점수, 리캡 숫자 |
+| 보조 | 핑크 카네이션 #FE7BBF | 연한 강조, 그라데이션 중간 |
+
+| 모드 | 바탕 | 카드 | 글자 | 핑크 글자(보조 버튼·칩) |
+|---|---|---|---|---|
+| Light | #F4F4F7 | #FFFFFF | #14151F | #C2125A (진하게) |
+| Dark | 블랙 러시안 #000215 | #0D0F24 | #F5F5FA | #FF3D8B (밝게) |
 
 규칙
-- 차트리우스는 흰 바탕 위 글자로 쓰지 않는다. 항상 검정 글씨와 함께(대비 14:1).
+- 모드는 기본으로 휴대폰 설정을 따르고, 주최사가 행사 기본값을 정할 수 있다 (밤 밋업은 Dark).
+- 차트리우스는 흰 바탕 위 글자로 쓰지 않는다.
 - 네온은 "순간"에만: 새 사람 발견, 퀴즈 정답, 리캡 숫자, 진행 바. 입력·설정 화면은 차분하게.
 - 바이올렛은 Kahoot, 오렌지는 Eventbrite 대표색과 겹쳐서 후보에서 뺐다.
 
@@ -46,13 +52,17 @@ Figma 변수 `Meetcha` 컬렉션에 모드 3개가 있다. 화면(프레임)의 
 
 ## 디자인 토큰 (Figma 변수 `Meetcha` 컬렉션)
 
-| 역할 | 값 |
-|---|---|
-| 배경 | `bg/base` #F2F4F6 · `bg/surface` #FFFFFF · `bg/subtle` #F9FAFB |
-| 글자 | `text/primary` #191F28 · `secondary` #4E5968 · `tertiary` #8B95A1 · `disabled` #B0B8C1 |
-| 브랜드 (Meetcha 바이올렛) | `brand/default` #5B47FB · `strong` #4632E0 · `weak` #EFEDFF · `soft` #D9D3FF |
-| 가려진 카드 | `fog/default` #1E2130 · `fog/raised` #2A2E42 · `fog/text` #8D93B5 |
-| 상태 | `success` #14B885 · `danger` #F04452 · `warning` #FFB020 |
+| 토큰 | Light | Dark |
+|---|---|---|
+| `bg/base` · `bg/surface` · `bg/subtle` | #F4F4F7 · #FFFFFF · #FAFAFC | #000215 · #0D0F24 · #14162D |
+| `text/primary` · `secondary` · `tertiary` · `disabled` | #14151F · #4A4D5E · #8A8D9C · #B6B8C3 | #F5F5FA · #B7B9CC · #7D809A · #4E5170 |
+| `text/onBrand` · `onAccent` · `onDark` | #FFFFFF · #14151F · #FFFFFF | #FFFFFF · #0A0B14 · #FFFFFF |
+| `line/default` · `line/strong` | #E6E6EC · #D2D3DB | #1F2238 · #30344E |
+| `brand/default` (핑크, 행동) | #E11D6C | #E11D6C |
+| `brand/strong` · `weak` · `soft` | #C2125A · #FFE8F2 · #FE7BBF | #FF3D8B · #2A0B19 · #FE7BBF |
+| `accent/default` (연두, 보상) · `accent/weak` | #CEFF32 · #F4FFD6 | #CEFF32 · #1E240C |
+| `fog/default` · `raised` · `text` (가려진 카드) | #0B0C1F · #1E2035 · #9A9DB8 | #15172E · #22253F · #8D90AE |
+| `success` · `danger` · `warning` | #14B885 · #F04452 · #FFB020 | #4ADE80 · #FF5A67 · #FFC14D |
 | 모서리 | 8 / 12 / 16 / 24 / 원형 |
 | 간격 | 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 |
 
@@ -72,6 +82,6 @@ Button(Primary·Secondary·Neutral × Large·Medium), Avatar(S·M·L·XL), Chip(
 | Flow 2 행사장에서 | A1 로그인 전 태그 · D2 발견 보드 · A2 새 사람 발견 · E2 만난 사람 명함 |
 | Flow 3 행사 후 | E5 행사 리캡 · E3 퀴즈 문제 · E3 정답 공개 · E4 퀴즈 결과 · E1 도감 |
 
-색 비교: `Color exploration · Neon Petal` 프레임에 발견 보드·새 사람 발견·리캡을 A안(Neon Light)·B안(Neon Dark)으로 나란히 두었다.
+컬러 시스템: `Meetcha 컬러 시스템 · Light / Dark` 프레임에 발견 보드·새 사람 발견·리캡을 Light·Dark 모드로 나란히 두었다. Flow 1~3의 화면들은 Light 모드다.
 
 각 화면 위에 UX 의도를 적어 두었다. 나머지 화면(설정, 메시지, 신고, 운영진 콘솔 등)은 같은 컴포넌트로 만든다.
